@@ -16,10 +16,10 @@ interface Item extends PickupInfo {
   seed: number;
 }
 
-export const MAX_PICKUPS = 3;
-const FIRST_SPAWN = 5;
-const SPAWN_MIN = 15, SPAWN_MAX = 25;
-const EXPIRE = 55;
+export const MAX_PICKUPS = 6;
+const FIRST_SPAWN = 1.5;
+const SPAWN_MIN = 4, SPAWN_MAX = 8;
+const EXPIRE = 45;
 /** Raio de coleta (horizontal) para quem simula localmente (jogador local, bots no host). */
 export const PICKUP_RADIUS = 1.5;
 /** O host aceita pedidos de clientes até esta distância (compensa latência/interpolação). */

@@ -30,6 +30,15 @@ export const MOVE = {
   crouchEye: 1.05,
   halfWidth: 0.3,
   stepHeight: 0.45,
+  // Slide: correndo + agachar
+  slideTime: 0.9,
+  slideBoost: 3.2,
+  slideMinSpeed: 9.5,
+  slideFriction: 0.9,
+  // Bunny hop: cada pulo emendado (tocou o chão e pulou de novo rápido) acelera
+  bhopWindow: 0.14,
+  bhopGain: 1.1,
+  bhopMax: 32,
 };
 
 /** Controlador do jogador local, rodando em tick fixo. */
@@ -54,6 +63,16 @@ export class Player {
   stepSmooth = 0;
   private stepDist = 0;
   private fallSpeed = 0;
+  /** Tempo restante de slide (s). */
+  slideT = 0;
+  /** Pulos emendados seguidos (bunny hop). */
+  bhopChain = 0;
+  private groundTime = 0;
+  private prevCrouchWant = false;
+
+  get sliding(): boolean {
+    return this.slideT > 0;
+  }
 
   constructor(private world: World) {}
 
@@ -83,6 +102,9 @@ export class Player {
     this.fallSpeed = 0;
     this.stepDist = 0;
     this.sprinting = false;
+    this.slideT = 0;
+    this.bhopChain = 0;
+    this.groundTime = 0;
   }
 
   tick(dt: number, inp: MoveInput): void {
@@ -90,7 +112,27 @@ export class Player {
     this.prevPos.copy(b.pos);
     this.prevEye = this.eye;
 
+    const wasSprinting = this.sprinting;
+    const crouchPressed = inp.crouch && !this.prevCrouchWant;
+    this.prevCrouchWant = inp.crouch;
+    this.groundTime = b.grounded ? this.groundTime + dt : 0;
+    if (this.groundTime > 0.3) this.bhopChain = 0;
+
     this.updateCrouch(inp.crouch);
+
+    // Slide: estava correndo no chão e apertou agachar
+    if (crouchPressed && this.crouched && b.grounded && wasSprinting && this.speed > 5 && this.slideT <= 0) {
+      const spd = this.speed;
+      const target = Math.min(MOVE.bhopMax, Math.max(spd + MOVE.slideBoost, MOVE.slideMinSpeed));
+      b.vel.x *= target / spd;
+      b.vel.z *= target / spd;
+      this.slideT = MOVE.slideTime;
+      bus.emit('player:slide', {});
+    }
+    if (this.slideT > 0) {
+      this.slideT -= dt;
+      if (!inp.crouch || this.speed < 3) this.slideT = 0;
+    }
 
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
     // forward = (-sin, 0, -cos), right = (cos, 0, -sin)
@@ -107,13 +149,26 @@ export class Player {
 
     if (b.grounded) {
       if (inp.jump && !this.crouchBlocked()) {
+        // Pulo emendado logo depois de tocar o chão = bunny hop: ganha velocidade a cada um
+        const spd = this.speed;
+        if (this.groundTime <= MOVE.bhopWindow && spd > 3) {
+          this.bhopChain++;
+          const target = Math.min(MOVE.bhopMax, Math.max(spd, wishSpeed) * MOVE.bhopGain);
+          b.vel.x *= target / spd;
+          b.vel.z *= target / spd;
+        }
         b.vel.y = MOVE.jumpVel;
         b.grounded = false;
+        this.slideT = 0;
         bus.emit('player:jump', {});
+      } else if (this.slideT > 0) {
+        // deslizando: quase sem atrito, só um pouco de controle
+        this.applyFriction(dt, MOVE.slideFriction);
+        this.accelerate(wx, wz, Math.min(wishSpeed, 1.5), MOVE.groundAccel, dt);
       } else {
         this.applyFriction(dt);
       }
-      this.accelerate(wx, wz, wishSpeed, MOVE.groundAccel, dt);
+      if (this.slideT <= 0) this.accelerate(wx, wz, wishSpeed, MOVE.groundAccel, dt);
     } else {
       this.accelerate(wx, wz, Math.min(wishSpeed, MOVE.airCap), MOVE.airAccel, dt);
     }
@@ -183,11 +238,11 @@ export class Player {
     }
   }
 
-  private applyFriction(dt: number): void {
+  private applyFriction(dt: number, friction = MOVE.friction): void {
     const v = this.body.vel;
     const speed = Math.hypot(v.x, v.z);
     if (speed < 0.01) { v.x = 0; v.z = 0; return; }
-    const drop = Math.max(speed, MOVE.stopSpeed) * MOVE.friction * dt;
+    const drop = Math.max(speed, MOVE.stopSpeed) * friction * dt;
     const k = Math.max(speed - drop, 0) / speed;
     v.x *= k;
     v.z *= k;

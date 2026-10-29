@@ -67,6 +67,8 @@ export class Game {
   private lastLookDX = 0;
   private lastLookDY = 0;
   private sprintAmt = 0;
+  private speedFov = 0;
+  private slideTilt = 0;
   private footDist = new Map<string, number>();
 
   constructor(canvas: HTMLCanvasElement) {
@@ -428,6 +430,10 @@ export class Game {
       this.camfx.addTrauma(Math.min(0.35, d.kick * 0.03));
       this.camfx.punchFov(Math.min(3, d.kick * 0.35));
     });
+    bus.on('player:slide', () => {
+      this.camfx.punchFov(5);
+      this.camfx.addTrauma(0.12);
+    });
     bus.on('player:land', (e) => {
       this.camfx.land(e.impact);
       if (e.impact > 9) this.camfx.addTrauma(0.15);
@@ -578,7 +584,8 @@ export class Game {
       this.player.tick(dt, {
         forward: k('KeyW') - k('KeyS'),
         right: k('KeyD') - k('KeyA'),
-        jump: this.jumpQueued,
+        // Segurar espaço pula de novo ao tocar o chão (bunny hop)
+        jump: this.jumpQueued || !!k('Space'),
         crouch: !!k('ControlLeft') || !!k('KeyC'),
         // Atirar ou mirar cancela a corrida
         sprint: !!k('ShiftLeft') && !(playing && (inp.mouseDown(0) || inp.mouseDown(2))),
@@ -675,16 +682,21 @@ export class Game {
     const z = p.prevPos.z + (p.pos.z - p.prevPos.z) * alpha;
     const eye = p.prevEye + (p.eye - p.prevEye) * alpha;
     cam.position.set(x, y + eye + p.stepSmooth + this.camfx.offsetY, z);
+    // Slide inclina a câmera de leve
+    this.slideTilt += ((p.sliding ? 0.07 : 0) - this.slideTilt) * Math.min(1, dt * 10);
     cam.rotation.set(
       p.pitch + this.weapons.recoilPitch + this.camfx.pitch,
       p.yaw + this.weapons.recoilYaw + this.camfx.yaw,
-      this.camfx.rollOut,
+      this.camfx.rollOut + this.slideTilt,
     );
     const w = this.weapons;
     this.sprintAmt += ((p.sprinting && p.speed > 3 ? 1 : 0) - this.sprintAmt) * Math.min(1, dt * 10);
+    // Sensação de velocidade: FOV abre conforme passa da corrida normal (bhop/slide)
+    const fast = Math.min(16, Math.max(0, p.speed - 8.5) * 0.9);
+    this.speedFov += (fast - this.speedFov) * Math.min(1, dt * 4);
     const zoom = w.zoomed && w.def.zoomFov
       ? w.def.zoomFov
-      : settings.fov * (1 + (w.def.adsZoom - 1) * smooth01(w.ads)) + this.sprintAmt * 4;
+      : settings.fov * (1 + (w.def.adsZoom - 1) * smooth01(w.ads)) + this.sprintAmt * 4 + this.speedFov;
     const targetFov = zoom + this.camfx.fovAdd;
     if (Math.abs(cam.fov - targetFov) > 0.01 || cam.aspect !== this.renderer.aspect) {
       cam.fov = targetFov;

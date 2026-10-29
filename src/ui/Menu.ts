@@ -21,7 +21,6 @@ interface SettingsPanel {
   setHost(v: boolean): void;
 }
 
-const PIXEL_TXT = ['', 'NÍTIDO', 'LEVE', 'RETRÔ', 'BEM RETRÔ'];
 
 function buildSettings(): SettingsPanel {
   const el = h('div', 'set');
@@ -61,9 +60,7 @@ function buildSettings(): SettingsPanel {
   };
 
   slider(el, 'sensitivity', 'Sensibilidade', 0.3, 8, 0.05);
-  slider(el, 'fov', 'Campo de visão', 60, 110, 1);
   slider(el, 'volume', 'Volume', 0, 1, 0.01, { scale: 100 });
-  slider(el, 'pixelSize', 'Pixelização', 1, 4, 1, { text: (v) => `${v} · ${PIXEL_TXT[v] ?? ''}` });
 
   const inv = h('label', 'chk');
   const invI = h('input'); invI.type = 'checkbox';
@@ -222,7 +219,7 @@ export class Menu {
 
     const hero = h('div', 'hero');
     const tb = h('div', 'titlebox');
-    tb.innerHTML = '<h1>CLT<span>fps</span>.html</h1><div class="sub">Tiroteio multiplayer no navegador</div>';
+    tb.innerHTML = `<h1>CLT<span>fps</span>.html</h1><div class="sub">Tiroteio multiplayer no navegador · v${__APP_VERSION__}</div>`;
     hero.appendChild(tb);
     sec.appendChild(hero);
 

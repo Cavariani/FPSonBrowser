@@ -35,6 +35,9 @@ function load(): Settings {
     if (raw) {
       const s = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } as Settings;
       if (typeof s.face !== 'string' || !s.face.startsWith('data:image/')) s.face = null;
+      // FOV e pixelização são fixos (não são mais opção no menu)
+      s.fov = DEFAULT_SETTINGS.fov;
+      s.pixelSize = DEFAULT_SETTINGS.pixelSize;
       return s;
     }
   } catch {

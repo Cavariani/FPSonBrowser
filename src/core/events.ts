@@ -27,6 +27,7 @@ export interface GameEvents {
   'actor:footstep': { actorId: string; pos: Vector3 };
   'player:footstep': { speed: number };
   'player:jump': {};
+  'player:slide': {};
   'player:land': { impact: number };
   'player:damage': { amount: number; fromDir: Vector3 | null; health: number };
   'player:death': { killer: string; weapon: WeaponId };
