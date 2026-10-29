@@ -1,3 +1,4 @@
+import { MAX_HP } from '../game/Actor';
 import './hud.css';
 import { bus } from '../core/events';
 import { WEAPONS } from '../game/weaponDefs';
@@ -136,7 +137,7 @@ export class HUD {
       </div>
       <div class="feed"></div>
       <div class="msgs"></div>
-      <div class="box hp"><span class="lbl">VIDA</span><div class="row"><div class="ico">${SVG_HEART}</div><div class="num">100</div></div><div class="bar"><b></b></div></div>
+      <div class="box hp"><span class="lbl">VIDA</span><div class="row"><div class="ico">${SVG_HEART}</div><div class="num">${MAX_HP}</div></div><div class="bar"><b></b></div></div>
       <div class="sphint"></div>
       <div class="box ammo">
         <span class="lbl">MUNIÇÃO</span>
@@ -378,10 +379,10 @@ export class HUD {
     if (hp !== p.hp) {
       p.hp = hp;
       this.hpNum.textContent = String(hp);
-      this.hpBar.style.transform = `scaleX(${Math.min(1, hp / 100)})`;
-      const low = hp <= 30 && hp > 0;
+      this.hpBar.style.transform = `scaleX(${Math.min(1, hp / MAX_HP)})`;
+      const low = hp <= MAX_HP * 0.3 && hp > 0;
       this.hpBox.classList.toggle('low', low);
-      this.hpBox.classList.toggle('mid', hp > 30 && hp <= 60);
+      this.hpBox.classList.toggle('mid', hp > MAX_HP * 0.3 && hp <= MAX_HP * 0.6);
       root.classList.toggle('low', low);
     }
 

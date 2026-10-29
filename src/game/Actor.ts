@@ -22,6 +22,8 @@ export interface ActorSnap {
 }
 
 const HEAD = 0.34;
+/** Vida máxima (era 100; subiu pra deixar o tempo pra matar menos curto). */
+export const MAX_HP = 130;
 
 /**
  * Qualquer combatente: jogador local, jogador remoto ou bot.
@@ -36,7 +38,7 @@ export class Actor {
   grounded = true;
   speed = 0;
 
-  hp = 100;
+  hp = MAX_HP;
   alive = false;
   kills = 0;
   deaths = 0;

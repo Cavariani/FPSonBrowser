@@ -115,7 +115,8 @@ export class Match {
     this.respawns.set(v.id, this.time + RESPAWN_TIME);
 
     if (this.host.mode() !== 'gungame') return;
-    if (a && a !== v) {
+    // Kill com arma maluca não sobe nível: só as armas da escada contam no gun game.
+    if (a && a !== v && !isSpecialId(r.weapon)) {
       let level = a.level, lk = a.levelKills + 1;
       if (lk >= killsNeeded(level)) { level++; lk = 0; }
       if (level >= GUNGAME_LADDER.length) {

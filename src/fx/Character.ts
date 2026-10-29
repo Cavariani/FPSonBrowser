@@ -85,6 +85,22 @@ function composePaper(tex: THREE.Texture): THREE.Texture {
 function mats() {
   if (!MAT) {
     MAT = new THREE.MeshLambertMaterial({ vertexColors: true });
+    // Legibilidade de longe: contorno claro (rim) + cores um pouco "acesas" que crescem com a distância,
+    // pra silhueta destacar do cenário bege mesmo em poucos pixels.
+    MAT.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        {
+          float dist = length(vViewPosition);
+          float far = smoothstep(8.0, 45.0, dist);
+          float rim = 1.0 - max(dot(normalize(normal), normalize(vViewPosition)), 0.0);
+          rim = pow(rim, 2.0);
+          totalEmissiveRadiance += vec3(1.0, 0.93, 0.8) * rim * (0.45 + 0.8 * far);
+          totalEmissiveRadiance += diffuseColor.rgb * (0.15 + 0.55 * far);
+        }`,
+      );
+    };
     FLASH_W = new THREE.MeshBasicMaterial({ color: 0xffffff });
     FLASH_R = new THREE.MeshBasicMaterial({ color: 0xff3a2a });
     SHADOW_MAT = new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });

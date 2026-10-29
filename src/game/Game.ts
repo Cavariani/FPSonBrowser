@@ -13,7 +13,7 @@ import type { NetLink } from '../net/types';
 import { buildEnvironment, type Environment } from '../render/MapBuilder';
 import { Renderer } from '../render/Renderer';
 import type { HudState, ScoreRow } from '../ui/types';
-import { ACTOR_COLORS, Actor, botName, type ActorSnap } from './Actor';
+import { ACTOR_COLORS, Actor, MAX_HP, botName, type ActorSnap } from './Actor';
 import { BotBrain, buildNavGraph } from './Bots';
 import { Match, RESPAWN_TIME, type DamageRequest, type MatchEvent, type V3 } from './Match';
 import { Player } from './Player';
@@ -67,6 +67,8 @@ export class Game {
   private lastLookDX = 0;
   private lastLookDY = 0;
   private sprintAmt = 0;
+  /** Corrida ligada (Shift é toggle). */
+  private sprintOn = false;
   private speedFov = 0;
   private slideTilt = 0;
   private footDist = new Map<string, number>();
@@ -305,7 +307,7 @@ export class Game {
         a.vel.set(0, 0, 0);
         a.yaw = e.yaw;
         a.pitch = 0;
-        a.hp = 100;
+        a.hp = MAX_HP;
         a.alive = true;
         a.weapon = e.weapon;
         a.snaps.length = 0;
@@ -476,6 +478,15 @@ export class Game {
 
     if (playing && inp.pressed('Space')) this.jumpQueued = true;
 
+    // Corrida em toggle (estilo CoD): Shift liga/desliga; para ao soltar o W, atirar, mirar ou agachar
+    if (playing && local.alive) {
+      if (inp.pressed('ShiftLeft') || inp.pressed('ShiftRight')) this.sprintOn = !this.sprintOn;
+      const crouching = inp.down('ControlLeft') || inp.down('KeyC');
+      if (!inp.down('KeyW') || inp.mouseDown(0) || inp.mouseDown(2) || crouching) this.sprintOn = false;
+    } else {
+      this.sprintOn = false;
+    }
+
     // Simulação em tick fixo
     this.acc += dt;
     while (this.acc >= TICK) {
@@ -587,8 +598,7 @@ export class Game {
         // Segurar espaço pula de novo ao tocar o chão (bunny hop)
         jump: this.jumpQueued || !!k('Space'),
         crouch: !!k('ControlLeft') || !!k('KeyC'),
-        // Atirar ou mirar cancela a corrida
-        sprint: !!k('ShiftLeft') && !(playing && (inp.mouseDown(0) || inp.mouseDown(2))),
+        sprint: this.sprintOn,
         speedMult: (local.special ? 1 : this.weapons.def.moveMult * (1 - 0.3 * this.weapons.ads)) * (this.sp.status.has(local.id, 'stun') ? 0.7 : 1),
       });
       this.jumpQueued = false;

@@ -315,14 +315,15 @@ export class BotBrain {
       case 'pombo':
         held = dist > 5 && dist < 42 && loose && seen;
         break;
-      case 'dolly': throwIf(dist > 8 && dist < 25 && loose && seen, 1.1, 2.2); break;
-      case 'panela': throwIf(dist > 9 && dist < 28 && loose && seen, 1.4, 2.6); approach = dist < 8 ? -1 : 0; break;
-      case 'tijolo': throwIf(dist > 4 && dist < 20 && onTarget && seen, 0.9, 1.8); break;
+      // Antes só arremessava a mais de 8-9 m: de perto o bot ficava só dançando sem dar dano.
+      case 'dolly': throwIf(dist > 2.5 && dist < 26 && loose && seen, 1.1, 2.2); approach = dist < 6 ? -1 : dist > 22 ? 1 : 0; break;
+      case 'panela': throwIf(dist > 4 && dist < 28 && loose && seen, 1.4, 2.6); approach = dist < 8 ? -1 : 0; break;
+      case 'tijolo': throwIf(dist > 1.5 && dist < 20 && onTarget && seen, 0.9, 1.8); break;
       case 'coxinha': throwIf(dist < 22 && onTarget && seen, 0.8, 1.5); break;
       case 'chinelo': throwIf(dist < 15 && onTarget && seen, 0.6, 1.2); break;
       case 'estilingue':
         if (!this.spCharging) {
-          if (this.spCool <= 0 && dist > 5 && dist < 45 && loose && seen) {
+          if (this.spCool <= 0 && dist > 2 && dist < 45 && loose && seen) {
             this.spCharging = true;
             this.spChargeT = 0.5 + Math.random() * 0.6;
             pressed = held = true;

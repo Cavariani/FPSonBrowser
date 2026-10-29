@@ -99,8 +99,9 @@ function buildSettings(): SettingsPanel {
 function controlsList(): HTMLElement {
   const wrap = h('div', 'keys');
   const items: [string, string][] = [
-    ['W A S D', 'Andar'], ['ESPAÇO', 'Pular'], ['CTRL / C', 'Agachar'], ['SHIFT', 'Andar devagar'],
-    ['R', 'Recarregar'], ['MOUSE ESQ.', 'Atirar'], ['MOUSE DIR.', 'Zoom / golpe forte'], ['TAB', 'Placar'],
+    ['W A S D', 'Andar'], ['ESPAÇO', 'Pular (segure: bunny hop)'], ['CTRL / C', 'Agachar (correndo: slide)'],
+    ['SHIFT', 'Correr (liga/desliga)'],
+    ['R', 'Recarregar'], ['MOUSE ESQ.', 'Atirar'], ['MOUSE DIR.', 'Mirar / golpe forte'], ['TAB', 'Placar'],
     ['1 - 6', 'Trocar arma (treino)'], ['ESC', 'Pausar'],
   ];
   for (const [k, d] of items) {

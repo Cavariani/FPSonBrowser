@@ -11,8 +11,8 @@ export interface PostInfo {
 }
 
 /**
- * Passe final: desenha o render target de baixa resolução na tela com cara de monitor CRT.
- * Curvatura leve, aberração cromática nas bordas, glow nos claros, scanlines por linha de pixel,
+ * Passe final: desenha o render target de baixa resolução na tela com cara de monitor CRT
+ * (sem curvatura/moldura): aberração cromática nas bordas, glow nos claros, scanlines por linha de pixel,
  * máscara RGB sutil, grão e flicker — mais o grading quente, flash de dano e dessaturação na morte.
  * Um passe só (~8 leituras de textura por pixel).
  */
@@ -53,18 +53,12 @@ export function createPost(): { material: THREE.ShaderMaterial; update(info: Pos
       }
 
       void main() {
-        // curvatura de tubo (bem leve, não atrapalha a mira)
         vec2 cc = vUv - 0.5;
-        float r2 = dot(cc, cc);
-        vec2 uv = 0.5 + cc * (1.0 + 0.045 * r2 + 0.03 * r2 * r2);
-        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-          gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-          return;
-        }
+        vec2 uv = vUv;
 
         // aberração cromática crescendo pras bordas
         vec2 px = 1.0 / uRes;
-        vec2 ca = cc * px * 2.2;
+        vec2 ca = cc * px * 1.1;
         vec3 c;
         c.r = texture2D(tDiffuse, uv + ca).r;
         c.g = texture2D(tDiffuse, uv).g;
@@ -88,7 +82,7 @@ export function createPost(): { material: THREE.ShaderMaterial; update(info: Pos
 
         // scanlines: escurece a borda de baixo de cada linha de pixel do render interno
         float row = fract(uv.y * uRes.y);
-        float scan = 1.0 - 0.16 * smoothstep(0.55, 1.0, row) - 0.05 * smoothstep(0.45, 0.0, row);
+        float scan = 1.0 - 0.1 * smoothstep(0.55, 1.0, row) - 0.03 * smoothstep(0.45, 0.0, row);
         c *= scan;
 
         // máscara de fósforo RGB (colunas da tela real), bem sutil
@@ -96,16 +90,12 @@ export function createPost(): { material: THREE.ShaderMaterial; update(info: Pos
         vec3 mask = vec3(m < 1.0 ? 1.06 : 0.97, (m >= 1.0 && m < 2.0) ? 1.06 : 0.97, m >= 2.0 ? 1.06 : 0.97);
         c *= mask;
 
-        // vinheta de tubo
+        // vinheta leve
         vec2 d = vUv - 0.5;
         d.x *= uRes.x / max(uRes.y, 1.0) * 0.75;
         float r = length(d);
-        float v = smoothstep(0.9, 0.3, r);
-        c *= mix(0.68, 1.0, v);
-        // cantos arredondados escuros
-        vec2 e = abs(uv - 0.5) * 2.0;
-        float corner = smoothstep(1.0, 0.94, max(pow(e.x, 6.0) + pow(e.y, 6.0), 0.0));
-        c *= corner;
+        float v = smoothstep(0.95, 0.35, r);
+        c *= mix(0.82, 1.0, v);
 
         // dano: bordas vermelhas pulsando
         float edge = smoothstep(0.25, 0.85, r);
