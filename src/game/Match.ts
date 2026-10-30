@@ -1,5 +1,6 @@
 import { MAX_HP, type Actor } from './Actor';
 import { isSpecialId, SPECIAL_IDS, SPECIALS, type AnyWeaponId, type SpecialId, type StatusKind } from './special/defs';
+import { DMG_MULT, type BuffKind, type PowerId } from './special/Powerups';
 import { ARMOR_ABSORB, canBuy, isShopItem, KILL_REWARD, LADDER, ladderWeapon, PRICE, START_MONEY, type ShopItemId } from './shop';
 import type { WeaponId } from './weaponDefs';
 
@@ -18,6 +19,13 @@ export type MatchEvent =
   | { t: 'level'; id: string; level: number }
   /** Colete de `id` absorveu dano. */
   | { t: 'armor'; id: string; armor: number }
+  /** Powerup fixo do mapa apareceu / foi pego (`actor` '' = sumiu sem ninguém pegar). */
+  | { t: 'power-spawn'; id: number; kind: PowerId; pos: V3 }
+  | { t: 'power-take'; id: number; actor: string }
+  /** Vida de `id` mudou (marmita). */
+  | { t: 'heal'; id: string; hp: number }
+  /** `id` ganhou um buff de `dur` segundos. */
+  | { t: 'buff'; id: string; kind: BuffKind; dur: number }
   /** `id` comprou `item` e ficou com `money`. Arma comum substitui a maluca; extras agem na hora. */
   | { t: 'buy'; id: string; item: ShopItemId; money: number }
   | { t: 'spawn'; id: string; pos: V3; yaw: number; weapon: WeaponId }
@@ -147,6 +155,7 @@ export class Match {
     if (!v || !v.alive) return;
     const a = this.host.getActor(r.attacker);
     let dmg = Number.isFinite(r.dmg) ? Math.max(0, r.dmg) : 0;
+    if (a && a !== v && a.buffs.dmg > 0) dmg *= DMG_MULT; // cachaça: dano dobrado
     // colete absorve parte do dano até acabar
     if (v.armor > 0 && dmg > 0) {
       const ab = Math.min(v.armor, dmg * ARMOR_ABSORB);

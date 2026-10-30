@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SPECIALS, type ProjKind, type SpecialId } from '../../game/special/defs';
+import { POWERS, type PowerId } from '../../game/special/Powerups';
 import { Builder, vmMaterial } from '../vm/build';
 import { labelTexture, softTexture } from './pools';
 
@@ -934,6 +935,92 @@ export function buildPickupModel(id: SpecialId): THREE.Object3D {
     ring.scale.setScalar(1 + Math.sin(t * 3) * 0.08);
     tick?.(dt, t, id === 'ventilador' ? 0.3 : 0);
     if (id === 'lorenzetti' && parts.glow) (parts.glow.material as THREE.SpriteMaterial).opacity = 0.4 + Math.sin(t * 9) * 0.3;
+  };
+  return g;
+}
+
+// ------------------------------------------------------------------ powerups do mapa
+
+/** Geometria de cada powerup (~0.4 m), centrada na origem. */
+function powerGeo(id: PowerId): THREE.BufferGeometry {
+  return cached('pw-' + id, () => {
+    const b = new Builder();
+    switch (id) {
+      case 'marmita': // marmitex de alumínio com tampa e alça
+        b.box(C.aluminium, 0.38, 0.2, 0.27).box(C.aluminiumDark, 0.4, 0.04, 0.29, 0, 0.09, 0).box(C.red, 0.1, 0.03, 0.3, 0, 0.115, 0)
+          .box(C.steel, 0.22, 0.03, 0.03, 0, 0.17, 0).box(C.steel, 0.03, 0.08, 0.03, -0.1, 0.13, 0).box(C.steel, 0.03, 0.08, 0.03, 0.1, 0.13, 0);
+        break;
+      case 'capacete': // capacete amarelo de obra
+        b.push(new THREE.SphereGeometry(0.2, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), C.yellow, 0, 0, 0)
+          .cyl(C.yellow, 0.25, 0.03, 0, -0.01, 0, 0, 0, 0, 10).box(C.orange, 0.06, 0.05, 0.4, 0, 0.19, 0).box(C.black, 0.1, 0.04, 0.03, 0, 0.06, 0.2);
+        break;
+      case 'energetico': // latinha com raio
+        b.cyl(C.yellow, 0.09, 0.3, 0, 0, 0, 0, 0, 0, 10).cyl(C.aluminium, 0.092, 0.03, 0, 0.165, 0, 0, 0, 0, 10).cyl(C.aluminium, 0.092, 0.03, 0, -0.165, 0, 0, 0, 0, 10)
+          .box(C.black, 0.05, 0.14, 0.01, 0.01, 0.03, 0.09, 0, 0, -0.35).box(C.black, 0.05, 0.1, 0.01, -0.02, -0.06, 0.09, 0, 0, -0.35);
+        break;
+      case 'pilha': // pilha grande
+        b.cyl(C.green, 0.09, 0.3, 0, 0, 0, 0, 0, 0, 10).cyl(C.black, 0.092, 0.1, 0, -0.1, 0, 0, 0, 0, 10).cyl(C.havaYellow, 0.04, 0.05, 0, 0.175, 0, 0, 0, 0, 8)
+          .box(C.white, 0.06, 0.14, 0.01, 0, 0.03, 0.092);
+        break;
+      case 'pix': // bolo de notas
+        for (let i = 0; i < 3; i++) {
+          b.box(C.green, 0.36, 0.035, 0.18, 0, -0.05 + i * 0.045, 0, 0, i * 0.2 - 0.2, 0);
+        }
+        b.box(0x28ffa8, 0.08, 0.15, 0.2, 0, 0, 0, 0, 0, 0);
+        break;
+      case 'cachaca': // garrafa de cachaça com rótulo
+        b.cyl(C.woodDark, 0.09, 0.28, 0, -0.02, 0, 0, 0, 0, 10).cyl(C.woodDark, 0.035, 0.14, 0, 0.19, 0, 0, 0, 0, 8)
+          .box(C.black, 0.08, 0.03, 0.08, 0, 0.27, 0).box(C.tape, 0.1, 0.12, 0.012, 0, -0.03, 0.093);
+        break;
+    }
+    return b.build();
+  });
+}
+
+export function buildPowerModel(id: PowerId): THREE.Object3D {
+  const d = POWERS[id];
+  const g = new THREE.Group();
+  const spin = new THREE.Group();
+  const item = M(powerGeo(id));
+  item.scale.setScalar(1.5);
+  item.rotation.set(0.2, 0, 0.1);
+  spin.add(item);
+  g.add(spin);
+
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: softTexture(), color: d.color, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  }));
+  glow.scale.setScalar(1.2);
+  g.add(glow);
+
+  // feixe de luz mais fino que o das armas: dá pra diferenciar de longe
+  const beamMat = beamMaterial(d.color);
+  const halo = new THREE.Mesh(cached('pw-beam', () => beamGeometry(0.4, 0.5)), beamMat.halo);
+  halo.position.y = -0.8;
+  halo.frustumCulled = false;
+  halo.renderOrder = 5;
+  g.add(halo);
+
+  const ring = new THREE.Mesh(
+    cached('pk-ring', () => new THREE.RingGeometry(0.42, 0.55, 20).rotateX(-Math.PI / 2)),
+    new THREE.MeshBasicMaterial({ color: d.color, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }),
+  );
+  ring.position.y = -0.82;
+  g.add(ring);
+
+  const key = 'pw:' + id;
+  let tex = labels.get(key);
+  if (!tex) labels.set(key, (tex = labelTexture(d.name.toUpperCase(), '#' + d.color.toString(16).padStart(6, '0'))));
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false }));
+  label.scale.set(1.6, 0.4, 1);
+  label.position.y = 0.6;
+  g.add(label);
+
+  g.userData.spin = spin;
+  g.userData.update = (t: number) => {
+    beamMat.halo.uniforms.uTime.value = t;
+    glow.scale.setScalar(1.1 + Math.sin(t * 4) * 0.15);
+    ring.scale.setScalar(1 + Math.sin(t * 3) * 0.08);
   };
   return g;
 }

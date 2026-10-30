@@ -830,6 +830,9 @@ export class AudioSystem {
     bus.on('shop:buy', (e) => {
       if (e.local) this.play('levelUp', { prio: 3, delay: 0.1, rateVar: 0, volVar: 0 });
     });
+    bus.on('power:take', (e) => {
+      if (e.local) this.play('levelUp', { prio: 3, rate: 1.25, rateVar: 0, volVar: 0 });
+    });
     bus.on('ladder:level', () => {
       this.play('levelUp', { prio: 4, delay: 0.45, rateVar: 0, volVar: 0 });
     });

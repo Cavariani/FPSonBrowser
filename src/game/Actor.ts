@@ -47,6 +47,8 @@ export class Actor {
   money = 0;
   /** Pontos de colete (absorvem parte do dano). */
   armor = 0;
+  /** Buffs de powerup: segundos restantes (cada máquina desconta no seu relógio; o host decide o dano). */
+  readonly buffs = { speed: 0, ammo: 0, dmg: 0 };
   weapon: WeaponId = 'smg';
   /** Arma maluca (pickup) na mão, ou null. Munição só é precisa em quem simula (jogador local e bots no host). */
   special: SpecialId | null = null;

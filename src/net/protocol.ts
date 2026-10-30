@@ -3,6 +3,7 @@ import type { DamageRequest, MatchEvent } from '../game/Match';
 import type { SpecialId } from '../game/special/defs';
 import type { SpecialMsg } from '../game/special/msgs';
 import type { PickupInfo } from '../game/special/Pickups';
+import type { PowerInfo } from '../game/special/Powerups';
 
 /** Prefixo do peer ID do host no broker do PeerJS. O ID completo é `fpsdoclt-<CODIGO>`. */
 export const ROOM_PREFIX = 'fpsdoclt-';
@@ -83,7 +84,7 @@ export interface MeleeMsg {
 /** Mensagens JSON no canal confiável. */
 export type Msg =
   | { k: 'hello'; name: string; v: number; face?: string | null }
-  | { k: 'welcome'; id: string; hostId: string; mode: Mode; ep: number; actors: ActorInfo[]; pk?: PickupInfo[] }
+  | { k: 'welcome'; id: string; hostId: string; mode: Mode; ep: number; actors: ActorInfo[]; pk?: PickupInfo[]; pw?: PowerInfo[] }
   | { k: 'full' }
   | { k: 'join'; a: ActorInfo }
   | { k: 'leave'; id: string }
@@ -95,6 +96,8 @@ export type Msg =
   | { k: 'bye'; msg: string }
   /** Armas malucas: visual de projétil/raio (retransmitido pelo host). */
   | { k: 'sp'; m: SpecialMsg }
+  /** Cliente → host: quero pegar o powerup `id`. */
+  | { k: 'pw'; id: number }
   /** Cliente → host: quero pegar o pickup `id`. */
   | { k: 'pk'; id: number }
   /** Cliente → host: minha arma maluca acabou. */

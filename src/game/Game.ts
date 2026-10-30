@@ -22,6 +22,7 @@ import { SpecialSystem } from './special/Specials';
 import { WeaponSystem } from './Weapons';
 import { ARMOR_MAX, canBuy, isShopItem, LADDER, ladderWeapon, PRICE, SHOP_TIERS, START_MONEY, type ShopItemId } from './shop';
 import { isSpecialId, SPECIALS } from './special/defs';
+import { BUFF_COLOR, BUFF_NAME, powerUseful, SPEED_MULT, type BuffKind } from './special/Powerups';
 import { anyWeaponDef, WEAPONS, type WeaponDef, type WeaponId } from './weaponDefs';
 import { World } from './World';
 
@@ -317,6 +318,16 @@ export class Game {
         if (a.isLocal && up) bus.emit('ladder:level', { level: e.level, total: LADDER.length, weapon: ladderWeapon(e.level) });
         break;
       }
+      case 'heal': {
+        const a = this.actors.get(e.id);
+        if (a) a.hp = e.hp;
+        break;
+      }
+      case 'buff': {
+        const a = this.actors.get(e.id);
+        if (a) a.buffs[e.kind] = e.dur;
+        break;
+      }
       case 'armor': {
         const a = this.actors.get(e.id);
         if (a) a.armor = e.armor;
@@ -348,6 +359,7 @@ export class Game {
         a.pitch = 0;
         a.hp = MAX_HP;
         a.armor = 0;
+        a.buffs.speed = a.buffs.ammo = a.buffs.dmg = 0;
         a.alive = true;
         a.weapon = e.weapon;
         a.snaps.length = 0;
@@ -371,7 +383,7 @@ export class Game {
         break;
       }
       case 'start':
-        for (const a of this.actors.values()) { a.kills = 0; a.deaths = 0; a.level = 0; a.armor = 0; a.money = START_MONEY; }
+        for (const a of this.actors.values()) { a.kills = 0; a.deaths = 0; a.level = 0; a.armor = 0; a.buffs.speed = a.buffs.ammo = a.buffs.dmg = 0; a.money = START_MONEY; }
         bus.emit('match:start', {});
         break;
     }
@@ -520,6 +532,15 @@ export class Game {
     const cheating = !!playing && local.alive;
     if (cheating && inp.pressed('KeyV')) this.cheats.activate();
     this.cheats.update(dt);
+    // buffs de powerup: cada máquina desconta no próprio relógio
+    for (const a of this.actors.values()) {
+      const b = a.buffs;
+      if (b.speed > 0) b.speed = Math.max(0, b.speed - dt);
+      if (b.ammo > 0) b.ammo = Math.max(0, b.ammo - dt);
+      if (b.dmg > 0) b.dmg = Math.max(0, b.dmg - dt);
+    }
+    // pilha eterna nas armas comuns: carregador sempre cheio
+    if (local?.alive && local.buffs.ammo > 0 && !local.special) this.weapons.ammo = this.weapons.def.mag;
     if (cheating && !this.sp.status.has(local.id, 'stun')) {
       this.cheats.aimbot(dt, this.player, this.actors.values(), this.weapons.recoilYaw, this.weapons.recoilPitch);
     }
@@ -697,7 +718,7 @@ export class Game {
         sprint: this.sprintOn,
         flyUp: k('Space') - (k('ControlLeft') || k('KeyC')),
         flyFast: !!k('ShiftLeft') || !!k('ShiftRight'),
-        speedMult: (local.special ? 1 : this.weapons.def.moveMult * (1 - 0.3 * this.weapons.ads)) * (this.sp.status.has(local.id, 'stun') ? 0.7 : 1),
+        speedMult: (local.special ? 1 : this.weapons.def.moveMult * (1 - 0.3 * this.weapons.ads)) * (this.sp.status.has(local.id, 'stun') ? 0.7 : 1) * (local.buffs.speed > 0 ? SPEED_MULT : 1),
       });
       this.jumpQueued = false;
       local.pos.copy(this.player.pos);
@@ -719,7 +740,9 @@ export class Game {
         knocked: (a: Actor) => !!this.sp.status.pushOf(a.id),
         stunned: (a: Actor) => this.sp.status.has(a.id, 'stun'),
         blinded: (a: Actor) => this.sp.status.has(a.id, 'blind'),
-        pickupNear: (a: Actor) => (a.special ? null : this.sp.pickups.nearest(a.pos.x, a.pos.z, 45)),
+        // Loja: bots vão atrás de powerups que servem (vida baixa, sem colete...). Treino: armas malucas do chão.
+        pickupNear: (a: Actor) => (this.mode === 'gungame' ? this.sp.powers.nearest(a.pos.x, a.pos.z, 30, (k) => powerUseful(a, k)) : a.special ? null : this.sp.pickups.nearest(a.pos.x, a.pos.z, 45)),
+        speedMult: (a: Actor) => (a.buffs.speed > 0 ? SPEED_MULT : 1),
         fire: (a: Actor, d: WeaponDef, o: THREE.Vector3, dirs: THREE.Vector3[]) => this.fire(a, d, o, dirs),
         melee: (a: Actor, d: WeaponDef, o: THREE.Vector3, dir: THREE.Vector3, heavy: boolean) => {
           const hit = this.melee(a, d, o, dir, heavy);
@@ -872,6 +895,7 @@ export class Game {
       shocked: sph.shocked,
       pickups: sph.pickups,
       cheats: this.cheats.hud(),
+      buffs: local ? (Object.keys(local.buffs) as BuffKind[]).filter((k) => local.buffs[k] > 0).map((k) => ({ kind: k, name: BUFF_NAME[k], left: local.buffs[k], color: BUFF_COLOR[k] })) : [],
     };
   }
 }

@@ -1,6 +1,6 @@
 import { DUST } from '../maps/dust';
 import type { MapDef } from '../maps/types';
-import { SPECIALS } from '../game/special/defs';
+import { SPECIALS, type SpecialId } from '../game/special/defs';
 import type { HudState } from './types';
 
 /** Raio de visão do radar (m). */
@@ -251,7 +251,7 @@ export class Minimap {
         const dist = Math.hypot(bx, by);
         let rad = (3.6 + 1.2 * pulse) * d;
         if (dist > edge) { const m = edge / dist; bx *= m; by *= m; rad *= 0.75; }
-        const col = '#' + (SPECIALS[q.kind]?.color ?? 0xffd23f).toString(16).padStart(6, '0');
+        const col = '#' + (q.color ?? SPECIALS[q.kind as SpecialId]?.color ?? 0xffd23f).toString(16).padStart(6, '0');
         const x = h + bx, y = h + by;
         ctx.globalAlpha = 0.25 + 0.35 * pulse;
         ctx.fillStyle = col;

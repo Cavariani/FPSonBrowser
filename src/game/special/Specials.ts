@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { bus } from '../../core/events';
-import { buildPickupModel, buildProjectileModel } from '../../fx/special/models';
+import { buildPickupModel, buildPowerModel, buildProjectileModel } from '../../fx/special/models';
 import { SpecialFX } from '../../fx/special/SpecialFX';
 import type { Actor } from '../Actor';
 import type { Game } from '../Game';
 import type { DamageRequest, MatchEvent, V3 } from '../Match';
 import { aimDir } from '../Weapons';
+import { POWERS, POWER_RADIUS, PowerupSystem, powerUseful } from './Powerups';
 import { REGEN_FULL, SPECIALS, type BeamKind, type ProjKind, type SpecialId, type StatusKind } from './defs';
 import { END_CODE, v3, type EndReason, type SpecialMsg } from './msgs';
 import { PickupSystem, PICKUP_RADIUS } from './Pickups';
@@ -114,7 +115,7 @@ export interface SpecialHud {
   burning: boolean;
   stunned: boolean;
   shocked: boolean;
-  pickups: { id: number; kind: SpecialId; x: number; z: number }[];
+  pickups: { id: number; kind: string; x: number; z: number; color?: number }[];
 }
 
 /**
@@ -124,16 +125,20 @@ export interface SpecialHud {
 export class SpecialSystem implements ProjHost {
   readonly status = new StatusManager();
   readonly pickups: PickupSystem;
+  /** Powerups fixos do mapa (modo da loja). */
+  readonly powers: PowerupSystem;
   readonly proj: ProjectileSim;
   readonly fx: SpecialFX;
   readonly states = new Map<string, SState>();
   private time = 0;
   private pickupReq = new Map<number, number>();
+  private powerReq = new Map<number, number>();
   private puT = 0;
   private botAir = new Map<string, number>();
 
   constructor(private g: Game) {
     this.pickups = new PickupSystem(g.scene, buildPickupModel);
+    this.powers = new PowerupSystem(g.scene, buildPowerModel);
     this.proj = new ProjectileSim(this, g.scene, buildProjectileModel);
     const down = new V(0, -1, 0), probe = new V();
     this.fx = new SpecialFX(g.scene, g.camera, g.vm.scene, {
@@ -183,6 +188,9 @@ export class SpecialSystem implements ProjHost {
   reset(): void {
     this.pickups.clear();
     this.pickups.resetTimer();
+    this.powers.clear();
+    this.powers.resetSpots();
+    this.powerReq.clear();
     this.proj.clear();
     this.status.clearAll();
     this.states.clear();
@@ -239,6 +247,15 @@ export class SpecialSystem implements ProjHost {
       case 'pickup-take':
         this.pickups.applyTake(e.id, e.actor === '');
         return true;
+      case 'power-spawn':
+        this.powers.applySpawn(e.id, e.kind, e.pos);
+        return true;
+      case 'power-take': {
+        const it = this.powers.applyTake(e.id);
+        const a = g.actors.get(e.actor);
+        if (it && a) bus.emit('power:take', { kind: it.kind, actorId: a.id, local: a.isLocal });
+        return true;
+      }
       case 'special': {
         const a = g.actors.get(e.actor);
         if (a) this.give(a, e.kind, e.ammo);
@@ -403,6 +420,13 @@ export class SpecialSystem implements ProjHost {
     this.pickups.tryTake(pickupId, a, (e) => this.g.hostPublish(e));
   }
 
+  /** Host: um cliente pediu para pegar um powerup. */
+  hostPowerRequest(actorId: string, id: number): void {
+    const a = this.g.actors.get(actorId);
+    if (!a || !this.g.isHost || !this.g.match || this.g.match.ended) return;
+    this.powers.tryTake(id, a, (e) => this.g.hostPublish(e));
+  }
+
   /** Host: um cliente avisou que a munição acabou. */
   hostSpecialEnd(actorId: string, kind?: string): void {
     const a = this.g.actors.get(actorId);
@@ -439,6 +463,8 @@ export class SpecialSystem implements ProjHost {
     if (g.isHost && g.match && !g.match.ended) {
       const collectors: Actor[] = [];
       for (const a of g.actors.values()) if (a.isLocal || a.isBot) collectors.push(a);
+      // powerups fixos (só na loja)
+      if (g.mode === 'gungame') this.powers.hostUpdate(dt, { nodes: this.spots(), collectors, publish: (e) => g.hostPublish(e) });
       this.pickups.hostUpdate(dt, {
         spots: this.spots(),
         actors: g.actors.values(),
@@ -448,6 +474,7 @@ export class SpecialSystem implements ProjHost {
       this.hostBotFalls(dt);
     } else if (!g.isHost && g.local?.alive) {
       this.clientPickupCheck(g.local);
+      if (g.mode === 'gungame') this.clientPowerCheck(g.local);
     }
 
     // posições de teleguiados (pombo/chinelo) pros outros
@@ -481,6 +508,18 @@ export class SpecialSystem implements ProjHost {
     }
   }
 
+  private clientPowerCheck(me: Actor): void {
+    for (const it of this.powers.items.values()) {
+      if (Math.abs(me.pos.y + 0.9 - it.pos[1]) > 2 || !powerUseful(me, it.kind)) continue;
+      if (Math.hypot(me.pos.x - it.pos[0], me.pos.z - it.pos[2]) > POWER_RADIUS) continue;
+      const last = this.powerReq.get(it.id) ?? -9;
+      if (this.time - last < 0.4) continue;
+      this.powerReq.set(it.id, this.time);
+      this.g.net?.requestPower(it.id);
+      break;
+    }
+  }
+
   /** Bots empurrados que caem: o dano de queda é de quem empurrou (host). */
   private hostBotFalls(_dt: number): void {
     for (const a of this.g.actors.values()) {
@@ -499,6 +538,7 @@ export class SpecialSystem implements ProjHost {
   frame(dt: number, alpha: number): void {
     const g = this.g;
     this.pickups.visual(dt);
+    this.powers.visual(dt);
     this.proj.render(alpha, dt);
     const l = g.local;
     if (l && l.alive) {
@@ -533,7 +573,10 @@ export class SpecialSystem implements ProjHost {
       burning: !!l && this.status.has(l.id, 'burn'),
       stunned: !!l && this.status.has(l.id, 'stun'),
       shocked: !!l && this.status.has(l.id, 'shock'),
-      pickups: [...this.pickups.items.values()].map((i) => ({ id: i.id, kind: i.kind, x: i.pos[0], z: i.pos[2] })),
+      pickups: [
+        ...[...this.pickups.items.values()].map((i) => ({ id: i.id, kind: i.kind as string, x: i.pos[0], z: i.pos[2] })),
+        ...[...this.powers.items.values()].map((i) => ({ id: 1e6 + i.id, kind: i.kind as string, x: i.pos[0], z: i.pos[2], color: POWERS[i.kind].color })),
+      ],
     };
   }
 
@@ -576,6 +619,8 @@ export class SpecialSystem implements ProjHost {
   private control(a: Actor, st: SState, dt: number, trig: Trigger, eye: THREE.Vector3, dir: THREE.Vector3): void {
     const D = SPECIALS[st.id];
     st.cd -= dt;
+    // pilha eterna: munição sempre cheia
+    if (a.buffs.ammo > 0 && st.ammo < D.ammo) { st.ammo = D.ammo; a.specialAmmo = D.ammo; }
     this.regenAmmo(a, st, D, dt);
     if (st.endT > 0) {
       st.endT -= dt;

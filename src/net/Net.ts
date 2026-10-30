@@ -297,6 +297,7 @@ export class Net implements NetLink {
       this.welcome = null;
       for (const i of w.actors) this.applyInfo(i);
       game.sp.pickups.applyList(w.pk ?? []);
+      game.sp.powers.applyList(w.pw ?? []);
     }
     const pending = this.inbox;
     this.inbox = [];
@@ -319,6 +320,10 @@ export class Net implements NetLink {
 
   requestPickup(id: number): void {
     if (this.hostConn?.open) this.sendJSON(this.hostConn, { k: 'pk', id });
+  }
+
+  requestPower(id: number): void {
+    if (this.hostConn?.open) this.sendJSON(this.hostConn, { k: 'pw', id });
   }
 
   requestSpecialEnd(kind: SpecialId): void {
@@ -623,6 +628,9 @@ export class Net implements NetLink {
       case 'pk':
         this.game.sp.hostPickupRequest(p.actorId, Number(m.id));
         break;
+      case 'pw':
+        this.game.sp.hostPowerRequest(p.actorId, Number(m.id));
+        break;
       case 'spx':
         this.game.sp.hostSpecialEnd(p.actorId, m.w);
         break;
@@ -671,7 +679,7 @@ export class Net implements NetLink {
     game.addRemoteActor(id, name, color, validFace(rawFace));
     const actors: ActorInfo[] = [];
     for (const a of game.actors.values()) actors.push(this.info(a));
-    this.sendJSON(p.conn, { k: 'welcome', id, hostId: HOST_ID, mode: settings.mode, ep: p.epoch, actors, pk: game.sp.pickups.list() });
+    this.sendJSON(p.conn, { k: 'welcome', id, hostId: HOST_ID, mode: settings.mode, ep: p.epoch, actors, pk: game.sp.pickups.list(), pw: game.sp.powers.list() });
     p.ready = true;
     this.onLobbyChange?.();
   }

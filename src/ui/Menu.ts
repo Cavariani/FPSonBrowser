@@ -220,7 +220,7 @@ export class Menu {
 
     const hero = h('div', 'hero');
     const tb = h('div', 'titlebox');
-    tb.innerHTML = `<h1>CLT<span>fps</span>.html</h1><div class="sub">Tiroteio multiplayer no navegador · v${__APP_VERSION__}</div>`;
+    tb.innerHTML = `<h1>CLT<span>fps</span></h1><div class="sub">Tiroteio multiplayer no navegador · v${__APP_VERSION__}</div>`;
     hero.appendChild(tb);
     sec.appendChild(hero);
 

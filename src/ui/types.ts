@@ -79,8 +79,18 @@ export interface HudState {
   shocked: boolean;
   /** Pickups ativos no mapa (para o minimapa). */
   pickups: PickupBlip[];
+  /** Buffs de powerup ativos (energético, pilha, cachaça). */
+  buffs: BuffHud[];
   /** Killstreaks-cheat: streak, guardados, ativo, timer e caixas de ESP já projetadas. */
   cheats: CheatsHud;
+}
+
+export interface BuffHud {
+  kind: string;
+  name: string;
+  /** Segundos restantes. */
+  left: number;
+  color: number;
 }
 
 export interface SpecialHud {
@@ -101,9 +111,12 @@ export interface SpecialHud {
 
 export interface PickupBlip {
   id: number;
-  kind: SpecialId;
+  /** SpecialId (arma maluca) ou PowerId (powerup do mapa). */
+  kind: string;
   x: number;
   z: number;
+  /** Cor 0xRRGGBB do blip (powerups); armas usam a cor delas. */
+  color?: number;
 }
 
 export interface RadarBlip {

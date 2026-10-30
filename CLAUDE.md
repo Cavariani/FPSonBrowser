@@ -1,4 +1,4 @@
-# FPS do CLT (CLTfps.html)
+# FPS do CLT (CLTfps)
 
 FPS multiplayer de navegador, low-poly, feito por tédio pra jogar com os amigos no trabalho. Projeto **bem early e cru**: muita coisa ainda vai mudar. Online em https://cavariani.github.io/FPSonBrowser/
 
@@ -41,7 +41,8 @@ Não há testes automatizados.
 - **Loja (tecla B, sem rounds):** só armas comuns (faca, pistola, smg, escopeta, fuzil, sniper) e extras (colete, vida cheia, munição das malucas). Malucas NÃO se vendem. Comprar uma comum substitui a maluca na mão até morrer; ao respawnar volta a maluca do nível. Compra validada no host (`Match.buy`, `canBuy`).
 - **Dinheiro:** $500 inicial, $300 por kill (`shop.ts`). Colete absorve 50% do dano até 100 pontos.
 - **Munição das malucas regenera sozinha**, devagar (`regenAmmo` em `Specials.ts`; `REGEN_FULL`/`regen` em `defs.ts`).
-- Sem pickups no mapa no modo da loja. O id do modo continua `'gungame'` (nome antigo) e significa "modo da loja"; `'treino'` é o sandbox (pickups no mapa + 1-6 troca arma).
+- **Powerups fixos no mapa (estilo Doom/Quake), só na loja:** 12 pontos espalhados, voltam depois de pegos (`src/game/special/Powerups.ts`): marmita (+50 vida), capacete (+50 colete), energético (velocidade x1,4, 10 s), pilha (munição infinita, 10 s), PIX (+$300), cachaça (dano x2, 12 s). Host decide; buffs são `Actor.buffs` (segundos).
+- Sem pickups de armas no mapa no modo da loja. O id do modo continua `'gungame'` (nome antigo) e significa "modo da loja"; `'treino'` é o sandbox (pickups no mapa + 1-6 troca arma).
 
 ## Fluxo de trabalho
 

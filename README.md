@@ -1,4 +1,4 @@
-# CLTfps.html
+# CLTfps
 
 Tiroteio multiplayer no navegador, com os amigos.
 

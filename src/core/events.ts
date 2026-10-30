@@ -36,6 +36,8 @@ export interface GameEvents {
   /** Loja: alguém comprou (`local` = o jogador local), ganhou dinheiro por kill, ou faltou grana. */
   'shop:buy': { item: string; actorId: string; local: boolean };
   'shop:money': { delta: number };
+  /** Powerup do mapa pego (`local` = o jogador local). */
+  'power:take': { kind: import('../game/special/Powerups').PowerId; actorId: string; local: boolean };
   /** Subiu de nível na escada de malucas (só o jogador local). */
   'ladder:level': { level: number; total: number; weapon: string };
   'shop:deny': { item: string; missing: number };

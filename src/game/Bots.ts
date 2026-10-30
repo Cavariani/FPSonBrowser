@@ -22,6 +22,8 @@ export interface BotHost {
   blinded(a: Actor): boolean;
   /** Pickup de arma maluca mais próximo (ou null). */
   pickupNear(a: Actor): { id: number; pos: [number, number, number] } | null;
+  /** Multiplicador de velocidade (energético). */
+  speedMult(a: Actor): number;
 }
 
 interface NavGraph {
@@ -258,6 +260,7 @@ export class BotBrain {
     a.crouched = this.crouchTimer > 0;
     b.height = a.crouched ? MOVE.crouchHeight : MOVE.standHeight;
     if (a.crouched) wantSpeed *= MOVE.crouchMult;
+    wantSpeed *= host.speedMult(a);
 
     // Movimento (aceleração simples)
     const ml = Math.hypot(moveX, moveZ);

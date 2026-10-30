@@ -226,9 +226,12 @@
 .hud .money .cash { font: 1.5em var(--f-pix); color: #7dff8a; text-shadow: 2px 2px 0 #000; }
 .hud .money .goal { font-size: 0.95em; color: var(--yellow); text-shadow: 1px 1px 0 #000; }
 .hud .hp .arm { color: #6ec1ff; margin-left: 0.6em; }
+.hud .buffs { position: absolute; left: 1.2em; bottom: 8.6em; display: flex; flex-direction: column; gap: 0.3em; }
+.hud .buff { padding: 0.2em 0.7em; background: #000a; border-left: 4px solid var(--c); color: var(--c); font: 0.95em var(--f-pix); text-shadow: 1px 1px 0 #000; animation: buffpulse 0.9s ease-in-out infinite; }
+@keyframes buffpulse { 50% { background: #000d; } }
 .hud .money .key { font-size: 0.8em; color: #8892a8; }
 /* botão da loja: grande e piscando, bem na cara */
-.hud .shopcta { position: absolute; left: 50%; bottom: 9.5em; transform: translateX(-50%); display: flex; align-items: center; gap: 0.7em; padding: 0.45em 1em 0.45em 0.55em; background: #ffd23f; color: #1a1300; border: 3px solid #fff4b0; box-shadow: 0 4px 0 #000a, 0 0 18px #ffd23f88; font: 1.9em var(--f-pix); text-shadow: none; animation: ctapulse 1.1s ease-in-out infinite; }
+.hud .shopcta { position: absolute; left: 50%; bottom: 3em; transform: translateX(-50%); display: flex; align-items: center; gap: 0.7em; padding: 0.45em 1em 0.45em 0.55em; background: #ffd23f; color: #1a1300; border: 3px solid #fff4b0; box-shadow: 0 4px 0 #000a, 0 0 18px #ffd23f88; font: 1.9em var(--f-pix); text-shadow: none; animation: ctapulse 1.1s ease-in-out infinite; }
 .hud .shopcta kbd { min-width: 1.6em; text-align: center; padding: 0.1em 0.35em; background: #1a1300; color: #ffd23f; border: 2px solid #000; font: 1.3em var(--f-pix); }
 .hud .shopcta small { font-size: 0.7em; color: #0d5a1c; }
 .hud .shopcta.can { background: #7dff8a; border-color: #eaffec; box-shadow: 0 4px 0 #000a, 0 0 26px #7dff8acc; animation-duration: 0.7s; }
@@ -264,6 +267,7 @@
   .hud .hp { width: 11em; } .hud .ammo { width: 12em; }
 }
 @media (max-width: 1280px) { .hud .feed { top: 5.2em; } }
+.hud.dead .buffs { display: none; }
 .hud.dead .msgs, .hud.dead .top { opacity: 0.25; } .hud.dead .dnum { display: none; }
 .hud.sbshow .death { display: none; }
 

@@ -25,6 +25,8 @@ export interface NetLink {
   requestSpecialEnd(kind: SpecialId): void;
   /** Cliente → host: quero comprar `item` na loja (o host valida dinheiro e vida). */
   requestBuy(item: ShopItemId): void;
+  /** Cliente → host: quero pegar o powerup `id` (o host valida a distância). */
+  requestPower(id: number): void;
   /** Chamado todo frame: envia snapshots, pings etc. */
   update(dt: number): void;
   lobby(): LobbyInfo;

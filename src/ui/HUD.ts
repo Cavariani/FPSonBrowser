@@ -2,6 +2,7 @@ import { MAX_HP } from '../game/Actor';
 import './hud.css';
 import { bus } from '../core/events';
 import { PRICE } from '../game/shop';
+import { POWERS } from '../game/special/Powerups';
 import { SPECIALS } from '../game/special/defs';
 import type { SpecialId } from '../game/special/defs';
 import type { WeaponId } from '../game/weaponDefs';
@@ -57,6 +58,7 @@ export class HUD {
   private cashEl!: HTMLElement; private goalEl!: HTMLElement; private leaderEl!: HTMLElement;
   private shop!: ShopHud;
   private armEl!: HTMLElement;
+  private buffsEl!: HTMLElement; private buffSig = '';
   private ctaEl!: HTMLElement; private ctaSub!: HTMLElement;
   private fpsEl!: HTMLElement;
   private chargeEl!: HTMLElement; private chargeBar!: HTMLElement;
@@ -117,6 +119,7 @@ export class HUD {
       <div class="golaco"></div>
       <div class="box hp"><span class="lbl">VIDA <b class="arm"></b></span><div class="row"><div class="ico">${SVG_HEART}</div><div class="num">${MAX_HP}</div></div><div class="bar"><b></b></div></div>
       <div class="sphint"></div>
+      <div class="buffs"></div>
       <div class="shopcta"><kbd>B</kbd><span class="t">ABRIR LOJA</span><small class="d"></small></div>
       <div class="box ammo">
         <span class="lbl">MUNIÇÃO</span>
@@ -146,6 +149,7 @@ export class HUD {
     this.deathFace = q('.death .kface') as HTMLImageElement;
     this.endb = q('.endb'); this.endH = q('.endb h1'); this.endP = q('.endb p');
     this.armEl = q('.hp .arm');
+    this.buffsEl = q('.buffs');
     this.ctaEl = q('.shopcta'); this.ctaSub = q('.shopcta .d');
     this.cashEl = q('.money .cash'); this.goalEl = q('.money .goal'); this.leaderEl = q('.leader');
     this.chargeEl = q('.charge'); this.chargeBar = q('.charge b');
@@ -180,6 +184,9 @@ export class HUD {
       if (e.local) this.msg(`${shopName(e.item).toUpperCase()}!`, 'up');
     });
     bus.on('ladder:level', (e) => this.msg(`NÍVEL ${e.level + 1}/${e.total} → ${wInfo(e.weapon).name.toUpperCase()}`, 'up', undefined, wInfo(e.weapon).color !== null ? hex(wInfo(e.weapon).color!) : undefined));
+    bus.on('power:take', (e) => {
+      if (e.local) this.msg(POWERS[e.kind].msg, 'up', undefined, hex(POWERS[e.kind].color));
+    });
     bus.on('shop:money', (e) => this.msg(`+$${e.delta}`, 'up', undefined, '#7dff8a'));
     bus.on('shop:deny', (e) => this.msg('SEM GRANA', 'down', `faltam $${e.missing}`));
     bus.on('match:end', (e) => {
@@ -450,6 +457,7 @@ export class HUD {
 
     // gun game
     this.updateMoney(s);
+    this.updateBuffs(s);
     this.shop.update(s.shop, s.money);
 
     // morte
@@ -564,6 +572,19 @@ export class HUD {
       d.angle = ang;
       d.el.style.transform = `rotate(${ang.toFixed(3)}rad)`;
       d.el.style.opacity = String(Math.min(1, (2 - age) * 0.9).toFixed(2));
+    }
+  }
+
+  /** Chips dos buffs ativos (energético, pilha, cachaça) com o tempo restante. */
+  private updateBuffs(s: HudState): void {
+    const sig = s.buffs.map((b) => `${b.kind}:${Math.ceil(b.left)}`).join('|');
+    if (sig === this.buffSig) return;
+    this.buffSig = sig;
+    this.buffsEl.textContent = '';
+    for (const b of s.buffs) {
+      const el = h('div', 'buff', `${b.name} ${Math.ceil(b.left)}s`);
+      el.style.setProperty('--c', hex(b.color));
+      this.buffsEl.appendChild(el);
     }
   }
 
