@@ -328,8 +328,8 @@ export class BotBrain {
       case 'tijolo': throwIf(dist > 1.5 && dist < 20 && onTarget && seen, 0.9, 1.8); break;
       case 'bola': throwIf(dist > 2.5 && dist < 32 && onTarget && seen, 0.7, 1.4); break;
       case 'cafe':
-        held = dist < 8.8 && onTarget;
-        approach = dist > 5 ? 1 : 0;
+        held = dist < 10.8 && onTarget;
+        approach = dist > 6 ? 1 : 0;
         break;
       case 'pipa':
         // solta a pipa quando tem inimigo à vista e deixa a mira varrer a linha; recolhe se ele sumiu longe

@@ -22,7 +22,7 @@ export const ARMOR_ABSORB = 0.5;
  * Mexa na ordem aqui para rebalancear.
  */
 export const LADDER: SpecialId[] = [
-  'ventilador', 'cafe', 'chinelo', 'galinha', 'pombo', 'rexona', 'bola', 'pipa', 'rojao', 'panela', 'dolly', 'estilingue', 'lorenzetti', 'tijolo',
+  'ventilador', 'chinelo', 'galinha', 'pombo', 'cafe', 'rexona', 'bola', 'pipa', 'rojao', 'panela', 'dolly', 'estilingue', 'lorenzetti', 'tijolo',
 ];
 export const ladderWeapon = (level: number): SpecialId => LADDER[Math.max(0, Math.min(level, LADDER.length - 1))];
 

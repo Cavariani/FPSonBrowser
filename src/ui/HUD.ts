@@ -1,6 +1,7 @@
 import { MAX_HP } from '../game/Actor';
 import './hud.css';
 import { bus } from '../core/events';
+import { PRICE } from '../game/shop';
 import { SPECIALS } from '../game/special/defs';
 import type { SpecialId } from '../game/special/defs';
 import type { WeaponId } from '../game/weaponDefs';
@@ -56,6 +57,7 @@ export class HUD {
   private cashEl!: HTMLElement; private goalEl!: HTMLElement; private leaderEl!: HTMLElement;
   private shop!: ShopHud;
   private armEl!: HTMLElement;
+  private ctaEl!: HTMLElement; private ctaSub!: HTMLElement;
   private fpsEl!: HTMLElement;
   private chargeEl!: HTMLElement; private chargeBar!: HTMLElement;
   private spHint!: HTMLElement; private spPips!: HTMLElement; private spBar!: HTMLElement; private spTag!: HTMLElement;
@@ -115,6 +117,7 @@ export class HUD {
       <div class="golaco"></div>
       <div class="box hp"><span class="lbl">VIDA <b class="arm"></b></span><div class="row"><div class="ico">${SVG_HEART}</div><div class="num">${MAX_HP}</div></div><div class="bar"><b></b></div></div>
       <div class="sphint"></div>
+      <div class="shopcta"><kbd>B</kbd><span class="t">ABRIR LOJA</span><small class="d"></small></div>
       <div class="box ammo">
         <span class="lbl">MUNIÇÃO</span>
         <div class="wname"></div>
@@ -143,6 +146,7 @@ export class HUD {
     this.deathFace = q('.death .kface') as HTMLImageElement;
     this.endb = q('.endb'); this.endH = q('.endb h1'); this.endP = q('.endb p');
     this.armEl = q('.hp .arm');
+    this.ctaEl = q('.shopcta'); this.ctaSub = q('.shopcta .d');
     this.cashEl = q('.money .cash'); this.goalEl = q('.money .goal'); this.leaderEl = q('.leader');
     this.chargeEl = q('.charge'); this.chargeBar = q('.charge b');
     this.spHint = q('.sphint'); this.spPips = q('.sppips'); this.spBar = q('.spbar b'); this.spTag = q('.sptag');
@@ -566,7 +570,13 @@ export class HUD {
   private updateMoney(s: HudState): void {
     const p = this.p;
     if (s.mode === 'treino') return;
-    if (s.money !== p.cash) { p.cash = s.money; this.cashEl.textContent = '$' + s.money; }
+    if (s.money !== p.cash) {
+      p.cash = s.money; this.cashEl.textContent = '$' + s.money;
+      this.ctaSub.textContent = '$' + s.money;
+      // pulsa forte quando já dá pra comprar alguma coisa
+      this.ctaEl.classList.toggle('can', s.money >= PRICE.pistol);
+    }
+    this.ctaEl.classList.toggle('off', s.shop.open);
     const last = s.ladder.length - 1;
     const next = s.level < last ? ` → ${wInfo(s.ladder[s.level + 1]).short}` : ' · ÚLTIMA!';
     const goal = `NÍVEL ${s.level + 1}/${s.ladder.length}${next}`;

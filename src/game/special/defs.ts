@@ -118,8 +118,8 @@ export const SPECIALS: Record<SpecialId, SpecialDef> = {
   },
   cafe: {
     id: 'cafe', name: 'Garrafa Térmica de Café', short: 'CAFÉ', hint: 'Segure para jorrar café fervendo',
-    style: 'jet', ammo: 6, unit: 'sec', color: 0xff8a1f,
-    p: { range: 9, cone: 0.27, dps: 90, tick: 0.1, burn: 3.5, burnDps: 16, steam: 2.0 },
+    style: 'jet', ammo: 7, unit: 'sec', color: 0xff8a1f,
+    p: { range: 11, cone: 0.3, dps: 115, tick: 0.1, burn: 4, burnDps: 22, steam: 2.0 },
   },
   rojao: {
     id: 'rojao', name: 'Rojão de Festa Junina', short: 'ROJÃO', hint: 'Voa zigue-zagueando e estoura em área',
