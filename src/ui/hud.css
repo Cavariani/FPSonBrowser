@@ -156,7 +156,7 @@
 @keyframes feedin { from { opacity: 0; transform: translateX(30px); } }
 
 /* ---------- mensagens centrais ---------- */
-.hud .msgs { position: absolute; left: 0; right: 0; top: 14%; display: flex; flex-direction: column; align-items: center; gap: 0.3em; pointer-events: none; }
+.hud .msgs { position: absolute; left: 0; right: 0; top: 21%; display: flex; flex-direction: column; align-items: center; gap: 0.3em; pointer-events: none; }
 .hud .msg { text-align: center; font-family: var(--f-pix); font-size: 2.3em; line-height: 1.05; text-shadow: 3px 3px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; opacity: 0; will-change: transform, opacity; max-width: 90vw; }
 .hud .msg small { display: block; font-family: var(--f-num); font-size: 0.55em; margin-top: 0.3em; color: #fff; text-shadow: 2px 2px 0 #000; }
 /* ---------- popup de pontos (estilo CoD) ---------- */
@@ -198,6 +198,13 @@
 .hud .letter { text-align: center; padding: 1em 2.5em 1.1em; background: rgba(10, 12, 20, 0.7); border-top: 3px solid var(--red); border-bottom: 3px solid var(--red); min-width: min(26em, 90vw); }
 .hud .letter h2 { margin: 0; font: 4em/1 var(--f-pix); color: var(--red); letter-spacing: 0.06em; text-shadow: 3px 3px 0 #000; }
 .hud .letter .by { font-size: 1.9em; margin: 0.2em 0 0.3em; color: #fff; }
+/* foto de quem te matou: "folha" colada com fita, levemente torta */
+.hud .letter .kface {
+  display: block; width: 9em; height: 9em; object-fit: cover; margin: 0.6em auto 0.2em;
+  background: #fff; padding: 0.35em; box-shadow: 0 0.3em 0.8em rgba(0, 0, 0, 0.6); transform: rotate(-3deg);
+  image-rendering: auto; animation: kface-in 0.35s cubic-bezier(.2, 1.5, .4, 1);
+}
+@keyframes kface-in { from { transform: rotate(-12deg) scale(0.3); opacity: 0; } }
 .hud .letter .cd { font-size: 1.3em; color: #ccd; }
 .hud .letter .cd b { font: 1.4em var(--f-num); color: var(--yellow); display: inline-block; min-width: 2.2ch; }
 
@@ -213,22 +220,17 @@
 .hud .endb p { margin: 0.4em 0 0; font-size: 1.4em; color: #dde; }
 @keyframes glow { to { text-shadow: 4px 4px 0 #000, 0 0 18px var(--green); } }
 
-/* ---------- gun game ---------- */
+/* ---------- loja ---------- */
 .hud .top { position: absolute; left: 50%; top: 0.8em; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.35em; }
-.hud .ladder { display: flex; gap: 0.3em; padding: 0.35em 0.5em; }
-.hud .slot { width: 3.6em; text-align: center; padding: 0.2em 0 0.25em; background: #0006; border: 2px solid #3a4258; color: #8892a8; position: relative; }
-.hud .slot .n { position: absolute; left: 3px; top: 1px; font-size: 0.7em; opacity: 0.8; }
-.hud .slot svg { width: 2.2em; height: 0.92em; margin: 0.2em auto 0.15em; fill: currentColor; shape-rendering: crispEdges; }
-.hud .slot .nm { font: 0.7em var(--f-pix); display: block; white-space: nowrap; overflow: hidden; }
-.hud .slot.done { color: var(--green); border-color: #2f6b45; opacity: 0.6; }
-.hud .slot.cur { color: #1a1300; background: var(--yellow); border-color: #fff4b0; transform: translateY(-3px) scale(1.12); z-index: 1; box-shadow: 0 3px 0 #000a; }
-.hud .pips { display: flex; gap: 0.3em; align-items: center; font-size: 0.95em; color: var(--yellow); text-shadow: 1px 1px 0 #000; }
-.hud .pips i { width: 0.7em; height: 0.7em; background: #0008; border: 2px solid var(--yellow); }
-.hud .pips i.on { background: var(--yellow); }
+.hud .money { display: flex; gap: 0.9em; align-items: baseline; padding: 0.35em 0.8em; }
+.hud .money .cash { font: 1.5em var(--f-pix); color: #7dff8a; text-shadow: 2px 2px 0 #000; }
+.hud .money .goal { font-size: 0.95em; color: var(--yellow); text-shadow: 1px 1px 0 #000; }
+.hud .hp .arm { color: #6ec1ff; margin-left: 0.6em; }
+.hud .money .key { font-size: 0.8em; color: #8892a8; }
 .hud .leader { font-size: 1em; color: #cdd4e6; text-shadow: 1px 1px 0 #000; background: #0007; padding: 0.1em 0.7em; }
 .hud .leader.me { color: var(--green); }
 .hud .training { font: 1.1em var(--f-pix); color: var(--yellow); background: #000a; border: 2px dashed var(--yellow); padding: 0.7em 1em; text-align: center; }
-.hud.treino .ladder, .hud.treino .pips, .hud.treino .leader { display: none; }
+.hud.treino .money, .hud.treino .leader { display: none; }
 .hud:not(.treino) .training { display: none; }
 
 /* ---------- fps ---------- */
@@ -253,7 +255,6 @@
 
 @media (max-width: 700px) {
   .hud .hp { width: 11em; } .hud .ammo { width: 12em; }
-  .hud .slot { width: 2.9em; } .hud .slot .nm { display: none; }
 }
 @media (max-width: 1280px) { .hud .feed { top: 5.2em; } }
 .hud.dead .msgs, .hud.dead .top { opacity: 0.25; } .hud.dead .dnum { display: none; }
@@ -286,14 +287,14 @@
 .hud .ammo .spbar > b { background: var(--sp); transition: transform 1s linear; transform: scaleX(1); }
 .hud.special .ammo .rel, .hud.special .ammo .bar:not(.spbar) { display: none !important; }
 .hud .sphint {
-  position: absolute; right: 1.2em; bottom: 10.4em; max-width: 19em; text-align: right; opacity: 0; pointer-events: none;
+  position: absolute; right: 1.2em; bottom: 10.4em; max-width: min(19em, 70vw); line-height: 1.15; text-align: right; opacity: 0; pointer-events: none;
   font-size: 0.95em; color: #fff; background: rgba(8, 12, 22, 0.8); border-right: 3px solid var(--sp, var(--edge)); padding: 0.25em 0.6em;
 }
 .hud .sptag { display: none; align-items: center; gap: 0.5em; font-size: 0.95em; color: var(--sp, #fff); background: #000a; border: 2px solid var(--sp, #fff); padding: 0.1em 0.7em; }
 .hud .sptag svg { width: 2em; height: 0.85em; fill: currentColor; }
 .hud.special .sptag { display: flex; }
 .hud:not(.special) .sptag { display: none; }
-.hud .msg.sp { font-size: 1.9em; }
+.hud .msg.spk { font-size: 1.9em; }
 
 /* barra de carga do estilingue */
 .hud .charge { position: absolute; left: 50%; top: calc(50% + 38px); width: 6.5em; height: 0.5em; margin-left: -3.25em; background: rgba(0, 0, 0, 0.6); border: 1px solid #000; opacity: 0; transition: opacity 0.08s; overflow: hidden; }
@@ -301,3 +302,31 @@
 .hud .charge.on { opacity: 1; }
 .hud .charge.full b { background: var(--red); }
 .hud.zoomed .charge, .hud.dead .charge { opacity: 0; }
+
+/* arma em uso: painel pulsa */
+.hud .ammo.active::after {
+  content: ''; position: absolute; inset: 0; background: var(--sp); opacity: 0; pointer-events: none; clip-path: inherit;
+  animation: spactive 0.55s ease-in-out infinite alternate;
+}
+.hud .ammo.active { filter: drop-shadow(0 0 0.5em var(--sp)) drop-shadow(0 2px 0 rgba(0, 0, 0, 0.5)); }
+@keyframes spactive { from { opacity: 0.08; } to { opacity: 0.42; } }
+.hud .ammo .wname { font-size: 1.05em; }
+
+/* GOLAÇO */
+.hud .golaco { position: absolute; left: 0; right: 0; top: 30%; height: 0; display: flex; justify-content: center; align-items: center; pointer-events: none; }
+.hud .golaco > * { position: absolute; }
+.hud .golaco .rays {
+  width: 150vmax; height: 150vmax; margin: -75vmax 0 0 -75vmax; left: 50%; top: 50%; opacity: 0; border-radius: 50%;
+  background: repeating-conic-gradient(rgba(47, 212, 90, 0.55) 0 10deg, rgba(255, 210, 63, 0.5) 10deg 20deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0, transparent 14%); mask-image: radial-gradient(circle, #000 0, transparent 14%);
+}
+.hud .golaco .gtxt {
+  font: 9em/1 var(--f-pix); white-space: nowrap; letter-spacing: 0.04em; opacity: 0;
+  background: linear-gradient(180deg, #fff06a 0 46%, #35f06a 54% 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(3px 0 0 #00340f) drop-shadow(-3px 0 0 #00340f) drop-shadow(0 3px 0 #00340f) drop-shadow(0 -3px 0 #00340f) drop-shadow(0 8px 0 #000);
+}
+.hud .golaco.victim .gtxt { font-size: 5em; background: linear-gradient(180deg, #ff8a7a 0 46%, #ffd23f 54% 100%); -webkit-background-clip: text; background-clip: text; filter: drop-shadow(3px 0 0 #3a0600) drop-shadow(-3px 0 0 #3a0600) drop-shadow(0 3px 0 #3a0600) drop-shadow(0 -3px 0 #3a0600) drop-shadow(0 8px 0 #000); }
+.hud .golaco.victim .rays { background: repeating-conic-gradient(rgba(255, 74, 61, 0.4) 0 10deg, rgba(0, 0, 0, 0) 10deg 20deg); }
+.hud .golaco .gsub { top: 3.6em; font-size: 1.8em; color: #fff; text-shadow: 2px 2px 0 #000; }
+.hud .golaco .conf { width: 0.6em; height: 0.35em; left: 50%; top: 50%; }
+@media (max-width: 700px) { .hud .golaco .gtxt { font-size: 4em; } .hud .golaco.victim .gtxt { font-size: 2.6em; } }

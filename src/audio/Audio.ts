@@ -60,7 +60,16 @@ interface Loop {
 const BEAM_LAYERS: Record<string, [string, number][]> = {
   lorenzetti: [['zapLoop', 1]],
   rexona: [['sprayLoop', 0.7], ['fireLoop', 1]],
-  ventilador: [['fanLoop', 1], ['windLoop', 0.9]],
+  ventilador: [['fanLoop', 1], ['windLoop', 0.9], ['chopLoop', 0]],
+  cafe: [['jetLoop', 1], ['sprayLoop', 0.35]],
+  pipa: [['kiteLoop', 1], ['cutLoop', 0]],
+};
+
+/** Camada que liga/desliga com o estado `hit` (ou `chop`) do evento. */
+const TOGGLE: Record<string, { idx: number; lo: number; hi: number }> = {
+  lorenzetti: { idx: 0, lo: 0.7, hi: 1 },
+  ventilador: { idx: 2, lo: 0, hi: 1 },
+  pipa: { idx: 1, lo: 0, hi: 1 },
 };
 
 interface Voice {
@@ -463,6 +472,14 @@ export class AudioSystem {
     return made;
   }
 
+  /** Liga/desliga a camada controlada por `hit`/`chop` (ver TOGGLE). */
+  private toggleLayer(lp: Loop, on: boolean): void {
+    const t = TOGGLE[lp.kind];
+    if (!t || lp.hit === on || !this.ctx) return;
+    lp.hit = on;
+    lp.layers[t.idx].gain.gain.setTargetAtTime(on ? t.hi : t.lo, this.ctx.currentTime, 0.04);
+  }
+
   private setLoopPos(lp: Loop, pos: Pos): void {
     if (lp.pos) { lp.pos.x = pos.x; lp.pos.y = pos.y; lp.pos.z = pos.z; }
     const p = lp.panner;
@@ -519,11 +536,36 @@ export class AudioSystem {
       const key = id + ':' + e.kind;
       if (!e.on) { this.stopLoop(key); return; }
       if (!e.local) this.remember(e.actorId, e.origin);
+      if (!BEAM_LAYERS[e.kind]) return;
       const lp = this.loopSet(key, id, e.kind, BEAM_LAYERS[e.kind], e.local ? undefined : e.origin);
-      if (lp && lp.kind === 'lorenzetti' && lp.hit !== e.hit && this.ctx) {
-        lp.hit = e.hit;
-        lp.layers[0].gain.gain.setTargetAtTime(e.hit ? 1 : 0.7, this.ctx.currentTime, 0.04);
-      }
+      if (lp) this.toggleLayer(lp, e.kind === 'ventilador' ? !!e.chop : e.hit);
+    });
+
+    // --- Pipa no ar: vento/zumbido da linha em loop (posicional na pipa); chiado cortante quando corta
+    bus.on('special:kite', (e) => {
+      const id = who(e.local, e.actorId);
+      const key = id + ':pipa';
+      if (!e.on) { this.stopLoop(key); return; }
+      if (!e.local) this.remember(e.actorId, e.origin);
+      const lp = this.loopSet(key, id, 'pipa', BEAM_LAYERS.pipa, e.kite);
+      if (lp) this.toggleLayer(lp, e.hit);
+    });
+
+    // --- GOLAÇO: narrador + torcida (todo mundo ouve)
+    bus.on('special:golaco', (e) => {
+      this.remember(e.victimId, e.pos);
+      const o: PlayOpts = e.local
+        ? { prio: 4, wet: 0.3 }
+        : { pos: e.pos, ref: 25, rolloff: 0.5, maxDist: 400, prio: 4, wet: 0.3 };
+      this.play('golNarrator', { ...o, rateVar: 0.02 });
+      this.play('crowd', { ...o, delay: 0.25, vol: 0.9, rateVar: 0 });
+    });
+
+    // --- Rodo: o inimigo espatifou na parede
+    bus.on('special:slam', (e) => {
+      this.remember(e.victimId, e.pos);
+      const v = clamp(e.speed / 30, 0.5, 1.3);
+      this.play('slam', { pos: e.pos, ref: 10, rolloff: 0.9, maxDist: 200, prio: 4, vol: v, rate: 1.1 - 0.2 * clamp(v - 0.5, 0, 1), wet: 0.2, wetDist: true });
     });
 
     // --- Estilingue esticando: pitch sobe com a carga
@@ -557,10 +599,15 @@ export class AudioSystem {
         case 'tijolo': this.play('swingHeavy', { ...base, rate: 0.75, vol: 1.1 }); break;
         case 'pombo': this.play('pomboFire', base); break;
         case 'chinelo': this.play('chineloFwip', base); break;
-        case 'coxinha':
-          this.play('plopGun', { ...base, vol: 1.1, wet: 0.15 });
-          for (let i = 0; i < 6; i++) {
-            this.play('plop', { ...base, prio: 1, delay: 0.02 + i * 0.025 + Math.random() * 0.02, rate: 0.8 + Math.random() * 0.5, vol: 0.6, rateVar: 0 });
+        case 'bola': this.play('kick', { ...base, vol: 1.1 }); break;
+        case 'pipa': this.play('reel', base); break;
+        case 'rodo':
+          if ((e.charge ?? 0) > 0.5) {
+            // golpe carregado: o evento sai no início da carga; a pancada vem ~0.3 s depois
+            this.play('rodoCharge', base);
+            this.play('rodoSwing', { ...base, delay: 0.3, rate: 0.8, vol: 1.1 });
+          } else {
+            this.play('rodoSwing', base);
           }
           break;
         default: break;
@@ -589,8 +636,9 @@ export class AudioSystem {
         case 'brick': this.play('tonk', e.headshot ? { ...o, vol: 1.2, rate: 0.85 } : o); break;
         case 'pombo': this.play('pomboHit', o); break;
         case 'chinelo': this.play('plaft', o); break;
-        case 'coxinha': this.play('plop', { ...o, vol: 0.8 }); break;
         case 'panela': this.play('clang', o); break;
+        case 'rodo': this.play('plac', e.killed ? { ...o, vol: 1.2, rate: 0.9 } : o); break;
+        case 'bola': if (!e.headshot) this.play('kick', { ...o, vol: 0.6, rate: 1.3 }); break;
         default: break;
       }
     });
@@ -604,15 +652,10 @@ export class AudioSystem {
         case 'brick': this.play('tonk', { ...o, vol: v * 0.7 }); break;
         case 'bottle': this.play('impGlass', { ...o, vol: v * 1.5 }); break;
         case 'panela': this.play('clang', { ...o, vol: v * 0.8 }); break;
-        case 'coxinha': this.play('plop', { ...o, vol: v * 0.5 }); break;
         case 'chinelo': this.play('plaft', { ...o, vol: 0.5, rate: 1.4 }); break;
+        case 'bola': this.play('ballBounce', { ...o, vol: v * 1.2, rate: 0.7 + clamp(e.speed / 22, 0, 1) * 0.6 }); break;
         default: break;
       }
-    });
-
-    bus.on('special:stick', (e) => {
-      if (!this.ctx || !this.throttle('stick', 0.04)) return;
-      this.play('plop', { pos: e.pos, ref: 5, rolloff: 1.2, maxDist: 50, prio: 1, vol: 0.7, rate: 0.7 });
     });
 
     // --- Status
@@ -632,6 +675,7 @@ export class AudioSystem {
         case 'shock': this.play('zap', o); break;
         case 'blind': this.play('splat', { ...o, vol: e.local ? 1.1 : 1 }); break;
         case 'stun': this.play('stunBirds', { ...o, vol: 0.9 }); break;
+        case 'steam': this.play('steam', o); break;
       }
     });
 
@@ -765,6 +809,9 @@ export class AudioSystem {
     });
     bus.on('player:respawn', () => this.play('respawn', { prio: 2, rateVar: 0 }));
     bus.on('match:start', () => this.play('matchStart', { prio: 2, rateVar: 0 }));
+    bus.on('cheat:ready', () => this.play('cheatReady', { prio: 3, rateVar: 0, volVar: 0 }));
+    bus.on('cheat:start', () => this.play('cheatOn', { prio: 3, rateVar: 0, volVar: 0 }));
+    bus.on('cheat:end', () => this.play('cheatOff', { prio: 2, rateVar: 0, volVar: 0 }));
 
     // --- Outros atores (posicionais)
     bus.on('actor:footstep', (e) => {
@@ -794,8 +841,14 @@ export class AudioSystem {
     });
 
     // --- Modo / partida
-    bus.on('gungame:level', (e) => {
-      this.play(e.up ? 'levelUp' : 'levelDown', { prio: 4, delay: e.up ? 0.45 : 0.3, rateVar: 0, volVar: 0 });
+    bus.on('shop:buy', (e) => {
+      if (e.local) this.play('levelUp', { prio: 3, delay: 0.1, rateVar: 0, volVar: 0 });
+    });
+    bus.on('ladder:level', () => {
+      this.play('levelUp', { prio: 4, delay: 0.45, rateVar: 0, volVar: 0 });
+    });
+    bus.on('shop:deny', () => {
+      this.play('levelDown', { prio: 4, rateVar: 0, volVar: 0 });
     });
     bus.on('match:end', (e) => {
       this.play(e.winnerIsLocal ? 'fanfareWin' : 'fanfareLose', { prio: 4, delay: 0.5, rateVar: 0, volVar: 0 });

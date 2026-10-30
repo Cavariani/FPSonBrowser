@@ -13,6 +13,7 @@ const CSS = `
 @keyframes sfxdrip{from{transform:translateY(0)}to{transform:translateY(16px)}}
 .sfx .burn{background:radial-gradient(ellipse at 50% 55%,rgba(255,120,0,0) 38%,rgba(255,96,0,.38) 72%,rgba(255,40,0,.78) 100%)}
 .sfx .shock{background:radial-gradient(circle at 50% 50%,rgba(210,240,255,.55),rgba(120,200,255,.25) 60%,rgba(255,255,255,.5))}
+.sfx .steam{background:radial-gradient(ellipse at 50% 50%,rgba(255,255,255,.55),rgba(236,240,244,.8) 70%,rgba(255,255,255,.9));backdrop-filter:blur(7px) brightness(1.15);-webkit-backdrop-filter:blur(7px) brightness(1.15)}
 .sfx .stun{display:flex;justify-content:center;align-items:flex-start}
 .sfx .stun .ring{position:relative;width:min(46vw,380px);height:min(10vw,80px);margin-top:3vh}
 .sfx .stun .st{position:absolute;left:50%;top:50%;font:700 min(6vw,46px)/1 sans-serif;color:#ffe14a;text-shadow:0 2px 0 #7a5200,0 0 8px #ffb300;transform:translate(-50%,-50%)}
@@ -51,10 +52,12 @@ export class Overlay {
   private burn: HTMLDivElement;
   private shock: HTMLDivElement;
   private stun: HTMLDivElement;
+  private steam: HTMLDivElement;
   private stars: HTMLElement[] = [];
   private t = 0;
   private burnA = 0;
   private stunA = 0;
+  private steamA = 0;
   enabled = true;
 
   constructor() {
@@ -73,6 +76,7 @@ export class Overlay {
     this.shock = mk('shock');
     this.splat = mk('splat');
     this.stun = mk('stun');
+    this.steam = mk('steam');
     const ring = document.createElement('div');
     ring.className = 'ring';
     for (let i = 0; i < 5; i++) {
@@ -93,10 +97,12 @@ export class Overlay {
     this.splat.innerHTML = splatSVG();
   }
 
-  update(dt: number, s: { blind: number; burning: boolean; stunned: boolean; shocked: boolean }): void {
+  update(dt: number, s: { blind: number; steam: number; burning: boolean; stunned: boolean; shocked: boolean }): void {
     this.t += dt;
     const on = this.enabled;
     this.splat.style.opacity = on ? String(Math.min(1, s.blind)) : '0';
+    this.steamA += ((on ? s.steam : 0) - this.steamA) * Math.min(1, dt * 12);
+    this.steam.style.opacity = this.steamA < 0.01 ? '0' : Math.min(0.92, this.steamA).toFixed(2);
     this.burnA += ((s.burning ? 1 : 0) - this.burnA) * Math.min(1, dt * 6);
     this.burn.style.opacity = on ? String((this.burnA * (0.75 + Math.random() * 0.25)).toFixed(2)) : '0';
     this.stunA += ((s.stunned ? 1 : 0) - this.stunA) * Math.min(1, dt * 10);

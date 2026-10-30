@@ -6,7 +6,7 @@ import { SPECIALS, type ProjKind } from './defs';
 import { END_NAME, type EndReason, type SpecialMsg } from './msgs';
 
 const V = THREE.Vector3;
-const _a = new V(), _b = new V(), _c = new V(), _step = new V(), _dir = new V();
+const _a = new V(), _b = new V(), _c = new V(), _step = new V(), _dir = new V(), _ax = new V();
 
 interface PhysDef {
   /** Raio de colisão. */
@@ -26,15 +26,14 @@ const PH: Record<ProjKind, PhysDef> = {
   bottle: { r: 0.16, g: SPECIALS.dolly.p.g, e: SPECIALS.dolly.p.e, maxBounce: 99, life: SPECIALS.dolly.p.fuse + 1.2, tumble: 9 },
   brick: { r: 0.15, g: SPECIALS.tijolo.p.g, e: SPECIALS.tijolo.p.e, maxBounce: 2, life: 6, tumble: 7 },
   panela: { r: 0.2, g: SPECIALS.panela.p.g, e: SPECIALS.panela.p.e, maxBounce: 99, life: SPECIALS.panela.p.fuse + 1.2, tumble: 5 },
-  coxinha: { r: 0.07, g: SPECIALS.coxinha.p.g, e: 0, maxBounce: 0, life: SPECIALS.coxinha.p.life, tumble: 0 },
+  bola: { r: SPECIALS.bola.p.radius, g: SPECIALS.bola.p.g, e: SPECIALS.bola.p.e, maxBounce: SPECIALS.bola.p.maxBounce, life: SPECIALS.bola.p.life, tumble: 7 },
   pombo: { r: 0.3, g: 0, e: 0, maxBounce: 0, life: SPECIALS.pombo.p.life, tumble: 0 },
   chinelo: { r: SPECIALS.chinelo.p.radius, g: 0, e: 0, maxBounce: 0, life: 7, tumble: 0 },
 };
 
 const FUSE: Partial<Record<ProjKind, number>> = { bottle: SPECIALS.dolly.p.fuse, panela: SPECIALS.panela.p.fuse };
 /** Projéteis balísticos que acertam actors (os outros têm lógica própria). */
-const HITS_ACTORS: Partial<Record<ProjKind, boolean>> = { stone: true, brick: true, bottle: true, coxinha: true };
-const MAX_RESTS = 48;
+const HITS_ACTORS: Partial<Record<ProjKind, boolean>> = { stone: true, brick: true, bottle: true, bola: true };
 
 export interface Proj {
   /** `${dono}#${n}` */
@@ -53,7 +52,7 @@ export interface Proj {
   model: THREE.Object3D;
   ended: boolean;
   charge: number;
-  /** Distância percorrida (coxinha: queda do dano). */
+  /** Distância percorrida. */
   travel: number;
   fuse: number;
   hissT: number;
@@ -68,11 +67,8 @@ export interface Proj {
   rpos: THREE.Vector3 | null;
   rvel: THREE.Vector3;
   netT: number;
-}
-
-interface Rest {
-  model: THREE.Object3D;
-  t: number;
+  /** Bola: vítima → idade do projétil em que ela pode ser acertada de novo (acerta vários, sem metralhar o mesmo). */
+  hitCool: Map<string, number> | null;
 }
 
 export interface ProjHost {
@@ -107,11 +103,13 @@ export function steer(vel: THREE.Vector3, desired: THREE.Vector3, maxAng: number
   const d = _b.copy(desired).normalize();
   const ang = Math.acos(Math.max(-1, Math.min(1, cur.dot(d))));
   if (ang < 1e-4) return;
-  if (ang > Math.PI - 0.05) d.set(-cur.z, 0, cur.x).normalize(); // oposto exato: escolhe um lado
-  const t = Math.min(1, maxAng / ang);
-  cur.lerp(d, t);
-  if (cur.lengthSq() < 1e-8) return;
-  vel.copy(cur.normalize()).multiplyScalar(sp);
+  // gira exatamente `maxAng` em torno do eixo cur×desired (vale também para o oposto exato: o chinelo volta em linha reta pra mão)
+  const ax = _ax.crossVectors(cur, d);
+  if (ax.lengthSq() < 1e-8) ax.set(-cur.z, 0, cur.x);
+  if (ax.lengthSq() < 1e-8) ax.set(1, 0, 0);
+  ax.normalize();
+  cur.applyAxisAngle(ax, Math.min(maxAng, ang));
+  vel.copy(cur).multiplyScalar(sp);
 }
 
 /**
@@ -122,7 +120,6 @@ export function steer(vel: THREE.Vector3, desired: THREE.Vector3, maxAng: number
 export class ProjectileSim {
   readonly list: Proj[] = [];
   private byKey = new Map<string, Proj>();
-  private rests: Rest[] = [];
   private counters = new Map<string, number>();
   private time = 0;
 
@@ -143,7 +140,7 @@ export class ProjectileSim {
       key: `${owner}#${n}`, n, owner, kind, pos: pos.clone(), prev: pos.clone(), vel: vel.clone(),
       age: 0, life: PH[kind].life, auth, bounces: 0, model, ended: false, charge: o.charge ?? 1, travel: 0,
       fuse: FUSE[kind] ?? 0, hissT: 0.25, target: null, acqT: 0, phase: 0, hitSet: new Set(), backT: 0,
-      rpos: null, rvel: new V(), netT: 0,
+      rpos: null, rvel: new V(), netT: 0, hitCool: kind === 'bola' ? new Map() : null,
     };
     if (kind === 'bottle' || kind === 'stone' || kind === 'brick' || kind === 'panela') {
       model.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
@@ -165,6 +162,13 @@ export class ProjectileSim {
     for (let i = 0; i + 6 < m.u.length; i += 7) {
       const p = this.byKey.get(`${m.a}#${m.u[i]}`);
       if (!p || p.auth) continue;
+      if (p.kind === 'bola') {
+        // a bola remota roda a mesma física; aqui só corrige o desvio (quando o dono acertou alguém, por exemplo)
+        _a.set(m.u[i + 1], m.u[i + 2], m.u[i + 3]);
+        if (p.pos.distanceTo(_a) > 0.3) p.pos.lerp(_a, 0.6);
+        p.vel.set(m.u[i + 4], m.u[i + 5], m.u[i + 6]);
+        continue;
+      }
       (p.rpos ??= new V()).set(m.u[i + 1], m.u[i + 2], m.u[i + 3]);
       p.rvel.set(m.u[i + 4], m.u[i + 5], m.u[i + 6]);
     }
@@ -191,13 +195,11 @@ export class ProjectileSim {
     for (const p of this.list) this.scene.remove(p.model);
     this.list.length = 0;
     this.byKey.clear();
-    for (const r of this.rests) this.scene.remove(r.model);
-    this.rests.length = 0;
   }
 
-  /** Projéteis teleguiados do dono `id` simulados aqui (para mandar `pu`). */
+  /** Projéteis simulados aqui que precisam mandar posição (`pu`): teleguiados (pombo, chinelo) e a bola. */
   guidedOf(): Proj[] {
-    return this.list.filter((p) => p.auth && !p.ended && (p.kind === 'pombo' || p.kind === 'chinelo'));
+    return this.list.filter((p) => p.auth && !p.ended && (p.kind === 'pombo' || p.kind === 'chinelo' || p.kind === 'bola'));
   }
 
   end(p: Proj, why: EndReason): void {
@@ -226,12 +228,6 @@ export class ProjectileSim {
       if (!p.ended && p.age > p.life) this.end(p, 'expire');
       if (!p.ended && (p.pos.y < -30 || Math.abs(p.pos.x) > 150 || Math.abs(p.pos.z) > 150)) this.end(p, 'expire');
     }
-    for (let i = this.rests.length - 1; i >= 0; i--) {
-      const r = this.rests[i];
-      r.t -= dt;
-      if (r.t < 0.6) r.model.scale.setScalar(Math.max(0.01, r.t / 0.6));
-      if (r.t <= 0) { this.scene.remove(r.model); this.rests.splice(i, 1); }
-    }
   }
 
   /** Posição suave entre ticks + orientação. */
@@ -242,7 +238,6 @@ export class ProjectileSim {
       const m = p.model;
       m.position.lerpVectors(p.prev, p.pos, alpha);
       switch (p.kind) {
-        case 'coxinha':
         case 'pombo':
           if (p.vel.lengthSq() > 0.01) m.lookAt(_a.copy(m.position).add(p.vel));
           break;
@@ -273,6 +268,7 @@ export class ProjectileSim {
     for (const a of this.host.actors()) {
       if (a.id === p.owner || !a.alive) continue;
       if (p.kind === 'chinelo' && p.hitSet.has(a.id)) continue;
+      if (p.hitCool && (p.hitCool.get(a.id) ?? 0) > p.age) continue;
       for (let i = 0; i <= steps; i++) {
         const t = (len * i) / steps;
         _c.copy(from).addScaledVector(dir, t);
@@ -329,7 +325,6 @@ export class ProjectileSim {
       const nrm = wh.normal;
       p.pos.addScaledVector(_dir, Math.max(0, wh.dist - d.r)).addScaledVector(nrm, 0.003);
       const vn = p.vel.dot(nrm);
-      if (p.kind === 'coxinha') { this.stick(p, wh.point, nrm, wh.material); return; }
       if (vn >= 0) { p.pos.add(_step); continue; }
       const speed = -vn;
       const resting = speed < 2.2 && nrm.y > 0.7;
@@ -348,7 +343,9 @@ export class ProjectileSim {
         const k = Math.exp(-1.8 * h);
         p.vel.x *= k; p.vel.z *= k; // rola e vai parando
       } else {
-        p.vel.addScaledVector(nrm, -(1 + d.e) * vn);
+        // bola: quica MUITO nos primeiros `maxBounce` quiques, depois perde a energia e só rola
+        const e = p.kind === 'bola' && p.bounces >= d.maxBounce ? 0.1 : d.e;
+        p.vel.addScaledVector(nrm, -(1 + e) * vn);
         // atrito tangencial no quique
         const vn2 = p.vel.dot(nrm);
         _a.copy(nrm).multiplyScalar(vn2);
@@ -366,24 +363,6 @@ export class ProjectileSim {
         p.model.rotation.z += Math.random() * 2;
       }
     }
-  }
-
-  /** Coxinha chegou no chão/parede: fica lá um tempo (visual, com limite). */
-  private stick(p: Proj, point: THREE.Vector3, normal: THREE.Vector3, material: string): void {
-    p.ended = true;
-    this.byKey.delete(p.key);
-    const m = p.model;
-    m.position.copy(point).addScaledVector(normal, 0.05);
-    m.scale.setScalar(1);
-    if (normal.y > 0.6) { m.rotation.set(0, Math.atan2(p.vel.x, p.vel.z), 0); } else { m.lookAt(_a.copy(m.position).add(normal)); }
-    if (this.rests.length >= MAX_RESTS) {
-      const old = this.rests.shift()!;
-      this.scene.remove(old.model);
-    }
-    this.rests.push({ model: m, t: SPECIALS.coxinha.p.rest * (0.85 + Math.random() * 0.3) });
-    bus.emit('special:stick', { pos: point.clone(), normal: normal.clone() });
-    bus.emit('weapon:impact', { point: point.clone(), normal: normal.clone(), surface: 'world', material });
-    this.host.ended(p, 'world');
   }
 
   /** Remoto teleguiado: segue a última posição/velocidade recebida. */
@@ -512,6 +491,13 @@ export class ProjectileSim {
     p.phase = 1;
     p.hitSet.clear();
     p.backT = 0;
+    // a ida é reta, então a volta também: inverte na hora rumo à mão (mesma linha da ida; quem estiver no caminho leva de novo)
+    const owner = this.host.getActor(p.owner);
+    if (owner) {
+      owner.eyePos(_a);
+      _b.subVectors(_a, p.pos);
+      if (_b.lengthSq() > 1e-4) p.vel.copy(_b.normalize()).multiplyScalar(14);
+    }
     bus.emit('special:bounce', { kind: 'chinelo', pos: p.pos.clone(), speed: 8 });
   }
 }

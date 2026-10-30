@@ -13,7 +13,11 @@ export interface BotHost {
   fire(shooter: Actor, def: WeaponDef, origin: Vector3, dirs: Vector3[]): void;
   melee(shooter: Actor, def: WeaponDef, origin: Vector3, dir: Vector3, heavy: boolean): boolean;
   /** Armas malucas: o bot "segura/aperta" o gatilho. Chamado todo tick enquanto o bot tem uma. */
-  special(shooter: Actor, dt: number, held: boolean, pressed: boolean, dir: Vector3): void;
+  special(shooter: Actor, dt: number, held: boolean, pressed: boolean, dir: Vector3, altPressed?: boolean): void;
+  /** A arma maluca do bot está "ligada" (pipa no ar): o próximo clique recolhe. */
+  specialOn(a: Actor): boolean;
+  /** Foi lançado por knockback (rodo/vento): não reassume o controle horizontal no ar. */
+  knocked(a: Actor): boolean;
   stunned(a: Actor): boolean;
   blinded(a: Actor): boolean;
   /** Pickup de arma maluca mais próximo (ou null). */
@@ -33,7 +37,7 @@ function lobPitch(id: string, dist: number): number {
   switch (id) {
     case 'dolly': ({ speed: v, g, lift } = SPECIALS.dolly.p); break;
     case 'panela': ({ speed: v, g, lift } = SPECIALS.panela.p); break;
-    case 'tijolo': ({ speed: v, g, lift } = SPECIALS.tijolo.p); break;
+    case 'bola': ({ speed: v, g, lift } = SPECIALS.bola.p); break;
     case 'estilingue': v = SPECIALS.estilingue.p.vMax * 0.8; g = SPECIALS.estilingue.p.g; break;
     default: return 0;
   }
@@ -135,7 +139,7 @@ export class BotBrain {
     const def = WEAPONS[a.weapon];
     const stunned = host.stunned(a);
     const blinded = host.blinded(a);
-    let spHeld = false, spPressed = false;
+    let spHeld = false, spPressed = false, spAlt = false;
     this.spCool -= dt;
 
     // Arma maluca no mapa por perto? Vai buscar quando não está brigando.
@@ -182,9 +186,10 @@ export class BotBrain {
       const onTarget = Math.abs(wrapAngle(wantYaw - a.yaw)) < 0.12 + 0.6 / Math.max(dist, 1);
 
       if (a.special) {
-        const sp = this.specialCombat(a, dist, onTarget, dt);
+        const sp = this.specialCombat(a, dist, onTarget, dt, host.specialOn(a));
         spHeld = sp.held && !stunned;
         spPressed = sp.pressed && !stunned;
+        spAlt = sp.alt && !stunned;
         moveX = sp.approach > 0 ? -Math.sin(a.yaw) : sp.approach < 0 ? Math.sin(a.yaw) : Math.cos(a.yaw) * this.strafe;
         moveZ = sp.approach > 0 ? -Math.cos(a.yaw) : sp.approach < 0 ? Math.cos(a.yaw) : -Math.sin(a.yaw) * this.strafe;
         this.strafeTimer -= dt;
@@ -259,9 +264,12 @@ export class BotBrain {
     const ml = Math.hypot(moveX, moveZ);
     const tx = ml > 0.01 ? (moveX / ml) * wantSpeed : 0;
     const tz = ml > 0.01 ? (moveZ / ml) * wantSpeed : 0;
-    const k = Math.min(1, dt * (b.grounded ? 10 : 1.5));
-    b.vel.x += (tx - b.vel.x) * k;
-    b.vel.z += (tz - b.vel.z) * k;
+    // Lançado por knockback no ar: o corpo voa livre (senão o bot "freia" no meio do home run)
+    if (!(!b.grounded && host.knocked(a))) {
+      const k = Math.min(1, dt * (b.grounded ? 10 : 1.5));
+      b.vel.x += (tx - b.vel.x) * k;
+      b.vel.z += (tz - b.vel.z) * k;
+    }
     b.vel.y -= MOVE.gravity * dt;
     host.world.moveBody(b, dt);
     a.grounded = b.grounded;
@@ -284,15 +292,15 @@ export class BotBrain {
     }
     if (a.pos.y < -30) a.pos.set(0, 2, 0);
 
-    if (a.special) host.special(a, dt, spHeld, spPressed, aimDir(a.yaw, a.pitch, _aim));
+    if (a.special) host.special(a, dt, spHeld, spPressed, aimDir(a.yaw, a.pitch, _aim), spAlt);
   }
 
-  /** Decide se aperta/segura o gatilho da arma maluca e se chega perto ou fica longe. */
-  private specialCombat(a: Actor, dist: number, onTarget: boolean, dt: number): { held: boolean; pressed: boolean; approach: number } {
+  /** Decide se aperta/segura o gatilho da arma maluca e se chega perto ou fica longe. `on`: pipa já está no ar. */
+  private specialCombat(a: Actor, dist: number, onTarget: boolean, dt: number, on: boolean): { held: boolean; pressed: boolean; alt: boolean; approach: number } {
     const id = a.special!;
     const loose = onTarget || (Math.abs(wrapAngle(Math.atan2(-_d.x, -_d.z) - a.yaw)) < 0.45);
     const seen = this.seeTime > 0.3;
-    let held = false, pressed = false, approach = 0;
+    let held = false, pressed = false, alt = false, approach = 0;
     const throwIf = (ok: boolean, cdMin: number, cdMax: number) => {
       if (ok && this.spCool <= 0) {
         pressed = held = true;
@@ -319,7 +327,24 @@ export class BotBrain {
       case 'dolly': throwIf(dist > 2.5 && dist < 26 && loose && seen, 1.1, 2.2); approach = dist < 6 ? -1 : dist > 22 ? 1 : 0; break;
       case 'panela': throwIf(dist > 4 && dist < 28 && loose && seen, 1.4, 2.6); approach = dist < 8 ? -1 : 0; break;
       case 'tijolo': throwIf(dist > 1.5 && dist < 20 && onTarget && seen, 0.9, 1.8); break;
-      case 'coxinha': throwIf(dist < 22 && onTarget && seen, 0.8, 1.5); break;
+      case 'bola': throwIf(dist > 2.5 && dist < 32 && onTarget && seen, 0.7, 1.4); break;
+      case 'cafe':
+        held = dist < 8.8 && onTarget;
+        approach = dist > 5 ? 1 : 0;
+        break;
+      case 'pipa':
+        // solta a pipa quando tem inimigo à vista e deixa a mira varrer a linha; recolhe se ele sumiu longe
+        if (!on && dist < 27 && seen && this.spCool <= 0) { pressed = held = true; this.spCool = 1.2; }
+        else if (on && dist > 34 && this.spCool <= 0) { pressed = held = true; this.spCool = 1.2; }
+        approach = dist > 16 ? 1 : dist < 5 ? -1 : 0;
+        break;
+      case 'rodo':
+        approach = dist > 2.1 ? 1 : 0;
+        if (this.spCool <= 0 && dist < 2.7 && onTarget) {
+          if (Math.random() < 0.3) alt = true; else pressed = held = true;
+          this.spCool = alt ? 1.2 : 0.45 + Math.random() * 0.3;
+        }
+        break;
       case 'chinelo': throwIf(dist < 15 && onTarget && seen, 0.6, 1.2); break;
       case 'estilingue':
         if (!this.spCharging) {
@@ -335,7 +360,7 @@ export class BotBrain {
         }
         break;
     }
-    return { held, pressed, approach };
+    return { held, pressed, alt, approach };
   }
 
   private perceive(host: BotHost): void {

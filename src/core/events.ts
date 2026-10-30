@@ -1,4 +1,5 @@
 import type { Vector3 } from 'three';
+import type { CheatId } from '../game/Cheats';
 import type { WeaponId } from '../game/weaponDefs';
 import type { BeamKind, ProjKind, SpecialId, StatusKind } from '../game/special/defs';
 
@@ -32,7 +33,12 @@ export interface GameEvents {
   'player:damage': { amount: number; fromDir: Vector3 | null; health: number };
   'player:death': { killer: string; weapon: WeaponId };
   'player:respawn': {};
-  'gungame:level': { level: number; total: number; weapon: WeaponId; up: boolean };
+  /** Loja: alguém comprou (`local` = o jogador local), ganhou dinheiro por kill, ou faltou grana. */
+  'shop:buy': { item: string; actorId: string; local: boolean };
+  'shop:money': { delta: number };
+  /** Subiu de nível na escada de malucas (só o jogador local). */
+  'ladder:level': { level: number; total: number; weapon: string };
+  'shop:deny': { item: string; missing: number };
   'match:end': { winner: string; winnerIsLocal: boolean };
   'match:start': {};
 
@@ -50,33 +56,50 @@ export interface GameEvents {
   'special:end': { actorId: string; local: boolean; kind: SpecialId };
   /** Chinelo voltou pra mão de quem jogou. */
   'special:catch': { actorId: string; local: boolean };
-  /** Uso discreto (arremesso, estilingada, rajada de coxinha, pombo solto, chinelo lançado). */
+  /**
+   * Uso discreto: arremesso, estilingada, pombo solto, chinelo lançado, chute da bola, pipa solta (kind 'pipa'),
+   * golpe do rodo (kind 'rodo'; `charge` 1 = golpe carregado, 0 = normal).
+   */
   'special:fire': { actorId: string; local: boolean; kind: SpecialId; origin: Vector3; dir: Vector3; charge?: number };
   /** Estilingue esticando (0..1), a cada frame enquanto segura. */
   'special:charge': { actorId: string; local: boolean; charge: number };
   /**
-   * Raio/jato contínuo (lorenzetti, rexona, ventilador). Emitido todo frame no atirador e ~15 Hz nos remotos
+   * Raio/jato contínuo (lorenzetti, rexona, ventilador, cafe). Emitido todo frame no atirador e ~15 Hz nos remotos
    * enquanto `on`. `on:false` = parou. `end` = ponto final; `end2` = ponto do arco elétrico (só lorenzetti).
+   * `chop` (só ventilador): a hélice está picotando alguém a menos de 3.5 m.
    */
   'special:beam': {
     actorId: string; local: boolean; kind: BeamKind; on: boolean;
-    origin: Vector3; dir: Vector3; end: Vector3; end2: Vector3 | null; hit: boolean;
+    origin: Vector3; dir: Vector3; end: Vector3; end2: Vector3 | null; hit: boolean; chop?: boolean;
   };
+  /**
+   * Pipa com cerol no ar. Emitido todo frame no dono e ~15 Hz nos remotos enquanto `on`. `origin` = mão (início da linha),
+   * `kite` = posição da pipa, `hit` = a linha está cortando alguém. `on:false` = recolheu (a linha some).
+   */
+  'special:kite': { actorId: string; local: boolean; on: boolean; origin: Vector3; kite: Vector3; hit: boolean };
+  /** GOLAÇO: a bola acertou uma cabeça em velocidade (morte instantânea). Chega a todas as máquinas; `local` = foi você que chutou. */
+  'special:golaco': { actorId: string; local: boolean; victimId: string; pos: Vector3; speed: number };
+  /** Rodo: o inimigo lançado espatifou numa parede em alta velocidade. Chega a todas as máquinas. */
+  'special:slam': { victimId: string; byId: string; pos: Vector3; speed: number };
   /** Projétil quicou (speed = velocidade de impacto em m/s). */
   'special:bounce': { kind: ProjKind; pos: Vector3; speed: number };
   /** Garrafa Dolly ou panela explodiu. */
   'special:explode': { kind: 'dolly' | 'panela'; pos: Vector3; radius: number };
-  /** Projétil acertou alguém. */
-  'special:hit': { kind: ProjKind; pos: Vector3; victimId: string; headshot: boolean; killed: boolean };
+  /** Projétil (ou golpe do rodo, kind 'rodo') acertou alguém. Só em quem atirou; o golaço chega a todos com headshot:true. */
+  'special:hit': { kind: ProjKind | 'rodo'; pos: Vector3; victimId: string; headshot: boolean; killed: boolean };
   /** Panela de pressão (ou garrafa Dolly chacoalhando) chiando, a cada ~0.1-0.3 s. progress 0..1 até explodir. */
   'special:hiss': { kind: 'panela' | 'bottle'; pos: Vector3; progress: number };
-  /** Coxinha caiu no chão e ficou lá. */
-  'special:stick': { pos: Vector3; normal: Vector3 };
   /** Efeito de status aplicado em alguém. `local` = é você. */
   'status:apply': { actorId: string; local: boolean; kind: StatusKind; dur: number };
   'status:end': { actorId: string; local: boolean; kind: StatusKind };
   /** Alguém levou knockback / vento. */
   impulse: { actorId: string; local: boolean; vel: Vector3 };
+
+  // ---------------------------------------------------------------- killstreaks-cheat (só jogador local)
+  /** Streak chegou a 3/6/9: o cheat ficou guardado (aperte V). */
+  'cheat:ready': { id: CheatId };
+  'cheat:start': { id: CheatId };
+  'cheat:end': { id: CheatId };
 }
 
 type Handler<T> = (payload: T) => void;

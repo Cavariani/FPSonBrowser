@@ -3,7 +3,7 @@ import { SPECIALS, SPECIAL_IDS, specialAsWeapon } from './special/defs';
 export { SPECIALS, SPECIAL_IDS, isSpecialId } from './special/defs';
 export type { AnyWeaponId, SpecialId, SpecialDef, StatusKind, ProjKind, BeamKind } from './special/defs';
 
-/** Armas "sérias" do gun game. As armas malucas (pickups) têm ids próprios: ver `SpecialId`. */
+/** Armas comuns (clássicas da loja e do treino). As armas malucas têm ids próprios: ver `SpecialId`. */
 export type WeaponId = 'smg' | 'rifle' | 'shotgun' | 'sniper' | 'pistol' | 'knife';
 
 export interface WeaponDef {
@@ -91,8 +91,3 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
 // O tipo continua só com WeaponId: use `anyWeaponDef(id)` para acessar com tipo correto.
 for (const id of SPECIAL_IDS) (WEAPONS as Record<string, WeaponDef>)[id] = specialAsWeapon(SPECIALS[id]);
 export const anyWeaponDef = (id: WeaponId | import('./special/defs').SpecialId): WeaponDef => (WEAPONS as Record<string, WeaponDef>)[id];
-
-/** Escada do gun game. A última arma (faca) precisa de 1 kill. */
-export const GUNGAME_LADDER: WeaponId[] = ['smg', 'rifle', 'shotgun', 'sniper', 'pistol', 'knife'];
-export const KILLS_PER_LEVEL = 2;
-export const killsNeeded = (level: number) => (level >= GUNGAME_LADDER.length - 1 ? 1 : KILLS_PER_LEVEL);

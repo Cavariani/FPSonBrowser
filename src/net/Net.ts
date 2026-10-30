@@ -5,7 +5,8 @@ import { settings } from '../core/Settings';
 import { ACTOR_COLORS, type Actor } from '../game/Actor';
 import type { DamageRequest, MatchEvent } from '../game/Match';
 import type { Game } from '../game/Game';
-import type { SpecialId } from '../game/special/defs';
+import type { ShopItemId } from '../game/shop';
+import { SPECIALS, type SpecialId } from '../game/special/defs';
 import type { SpecialMsg } from '../game/special/msgs';
 import type { LobbyInfo } from '../ui/types';
 import { ICE_SERVERS } from './ice';
@@ -324,6 +325,10 @@ export class Net implements NetLink {
     if (this.hostConn?.open) this.sendJSON(this.hostConn, { k: 'spx', w: kind });
   }
 
+  requestBuy(item: ShopItemId): void {
+    if (this.hostConn?.open) this.sendJSON(this.hostConn, { k: 'buy', item });
+  }
+
   broadcastMatch(e: MatchEvent): void {
     if (!this.isHost) return;
     if (e.t === 'spawn') {
@@ -603,8 +608,9 @@ export class Net implements NetLink {
         r.dmg = Math.max(0, Math.min(r.dmg, 300));
         // Só o próprio atirador pede dano... exceto queda depois de empurrão: quem pede é a vítima (dir zerado)
         const ownShot = r.attacker === p.actorId;
-        const pushFall = r.victim === p.actorId && r.attacker !== r.victim && r.weapon === 'ventilador'
-          && r.dir[0] === 0 && r.dir[1] === 0 && r.dir[2] === 0 && r.dmg <= 150;
+        // (ventilador: queda; rodo: queda ou pancada na parede, que pode passar de 150)
+        const pushFall = r.victim === p.actorId && r.attacker !== r.victim && (r.weapon === 'ventilador' || r.weapon === 'rodo')
+          && r.dir[0] === 0 && r.dir[1] === 0 && r.dir[2] === 0 && r.dmg <= (r.weapon === 'rodo' ? 260 : 150);
         if (!ownShot && !pushFall) return;
         this.game.hostApplyDamage(r);
         break;
@@ -619,6 +625,9 @@ export class Net implements NetLink {
         break;
       case 'spx':
         this.game.sp.hostSpecialEnd(p.actorId, m.w);
+        break;
+      case 'buy':
+        this.game.hostBuy(p.actorId, m.item);
         break;
       case 'pong': {
         const rtt = performance.now() - m.t;
@@ -730,12 +739,14 @@ export class Net implements NetLink {
     a.kills = i.kl;
     a.deaths = i.de;
     a.level = i.lv;
-    a.levelKills = i.lk;
+    a.money = i.mo;
     a.weapon = i.w;
     a.special = i.sp ?? null;
     if (i.al) {
       if (a.isLocal) {
         g.applyMatchEvent({ t: 'spawn', id: i.id, pos: [i.x, i.y, i.z], yaw: i.yaw, weapon: i.w });
+        // o 'spawn' limpa a arma maluca: devolve a que o host disse que estava na mão
+        if (i.sp && SPECIALS[i.sp]) g.applyMatchEvent({ t: 'special', actor: i.id, kind: i.sp, ammo: SPECIALS[i.sp].ammo });
       } else {
         a.pos.set(i.x, i.y, i.z);
         a.yaw = i.yaw;
@@ -842,7 +853,7 @@ export class Net implements NetLink {
   private info(a: Actor): ActorInfo {
     return {
       id: a.id, n: this.numFor(a.id), name: a.name, c: a.color, b: a.isBot ? 1 : 0, hp: a.hp, al: a.alive ? 1 : 0,
-      kl: a.kills, de: a.deaths, lv: a.level, lk: a.levelKills, w: a.weapon,
+      kl: a.kills, de: a.deaths, lv: a.level, mo: a.money, w: a.weapon,
       x: r2(a.pos.x), y: r2(a.pos.y), z: r2(a.pos.z), yaw: Math.round(a.yaw * 1000) / 1000,
       f: a.face,
       sp: a.special ?? undefined,

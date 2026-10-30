@@ -10,7 +10,26 @@ export interface MoveInput {
   /** Shift: corre (só pra frente, em pé). */
   sprint: boolean;
   speedMult: number;
+  /** Noclip: sobe (+1) / desce (-1), e modo rápido. */
+  flyUp?: number;
+  flyFast?: boolean;
 }
+
+/** Noclip (cheat de 9 kills): velocidade de voo em m/s. */
+const NOCLIP_SPEED = 12;
+const NOCLIP_FAST = 24;
+/** Direções (normalizadas) da busca de espaço livre ao sair do noclip; ordem = preferência em empate (cima primeiro). */
+const FREE_DIRS: [number, number, number][] = (() => {
+  const out: [number, number, number][] = [];
+  for (const y of [1, 0, -1]) for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) {
+    if (!x && !y && !z) continue;
+    const l = Math.hypot(x, y, z);
+    out.push([x / l, y / l, z / l]);
+  }
+  return out.sort((a, b) => b[1] - a[1] || 0);
+})();
+const DOWN = new Vector3(0, -1, 0);
+const _o = new Vector3(), _o2 = new Vector3(), _save = new Vector3();
 
 // Unidades em metros/segundo. Inspirado no movimento Quake/Source (aceleração + fricção + air strafe).
 export const MOVE = {
@@ -74,6 +93,94 @@ export class Player {
     return this.slideT > 0;
   }
 
+  /** Modo noclip: voa na direção do olhar, sem gravidade nem colisão. */
+  noclip = false;
+
+  setNoclip(on: boolean): void {
+    if (on === this.noclip) return;
+    this.noclip = on;
+    const b = this.body;
+    if (on) {
+      this.slideT = 0;
+      this.sprinting = false;
+      this.crouched = false;
+      b.height = MOVE.standHeight;
+      b.grounded = false;
+    } else {
+      this.leaveNoclip();
+    }
+  }
+
+  private tickNoclip(dt: number, inp: MoveInput): void {
+    const b = this.body;
+    this.prevPos.copy(b.pos);
+    this.prevEye = this.eye;
+    const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
+    const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
+    // frente = direção do olhar (com pitch); direita = horizontal
+    let wx = -sy * cp * inp.forward + cy * inp.right;
+    let wy = sp * inp.forward + (inp.flyUp ?? 0);
+    let wz = -cy * cp * inp.forward - sy * inp.right;
+    const l = Math.hypot(wx, wy, wz);
+    const spd = l > 0 ? (inp.flyFast ? NOCLIP_FAST : NOCLIP_SPEED) / l : 0;
+    wx *= spd; wy *= spd; wz *= spd;
+    const k = 1 - Math.exp(-dt * 12);
+    b.vel.x += (wx - b.vel.x) * k;
+    b.vel.y += (wy - b.vel.y) * k;
+    b.vel.z += (wz - b.vel.z) * k;
+    b.pos.addScaledVector(b.vel, dt);
+    // limites: dentro do mapa (com folga) e do chão pra cima
+    const bd = this.world.map.bounds;
+    b.pos.x = Math.max(bd.min[0] - 4, Math.min(bd.max[0] + 4, b.pos.x));
+    b.pos.z = Math.max(bd.min[2] - 4, Math.min(bd.max[2] + 4, b.pos.z));
+    b.pos.y = Math.max(bd.min[1], Math.min(bd.max[1] + 20, b.pos.y));
+    b.grounded = false;
+    this.fallSpeed = 0;
+    this.eye += (MOVE.standEye - this.eye) * Math.min(1, dt * 14);
+    this.stepSmooth = 0;
+  }
+
+  /** Saiu do noclip: se está dentro de algo (ou sem chão embaixo), empurra pro espaço livre mais próximo; senão só cai. */
+  private leaveNoclip(): void {
+    const b = this.body;
+    b.vel.set(0, 0, 0);
+    b.height = MOVE.standHeight;
+    this.crouched = false;
+    this.fallSpeed = 0;
+    this.slideT = 0;
+    if (!this.standable(b.pos)) {
+      const ox = b.pos.x, oy = b.pos.y, oz = b.pos.z;
+      let found = false;
+      for (let r = 0.25; r <= 14 && !found; r += 0.25) {
+        for (const d of FREE_DIRS) {
+          _o.set(ox + d[0] * r, oy + d[1] * r, oz + d[2] * r);
+          if (_o.y >= 0 && this.standable(_o)) { b.pos.copy(_o); found = true; break; }
+        }
+      }
+      if (!found) {
+        // nada por perto: spawn livre mais próximo
+        let best = Infinity;
+        for (const s of this.world.map.spawns) {
+          _o.set(s.pos[0], s.pos[1] + 0.05, s.pos[2]);
+          const dd = _o.distanceToSquared(b.pos);
+          if (dd < best && this.standable(_o)) { best = dd; b.pos.copy(_o); found = true; }
+        }
+        if (!found) { const s = this.world.map.spawns[0]; b.pos.set(s.pos[0], s.pos[1] + 0.05, s.pos[2]); }
+      }
+    }
+    this.prevPos.copy(b.pos);
+  }
+
+  /** Cabe em pé em `p` e tem chão embaixo (não é um vazio fora do mapa)? */
+  private standable(p: Vector3): boolean {
+    const b = this.body;
+    const save = _save.copy(b.pos);
+    b.pos.copy(p);
+    const ok = this.world.fits(b) && this.world.raycast(_o2.set(p.x, p.y + 0.1, p.z), DOWN, 80) !== null;
+    b.pos.copy(save);
+    return ok;
+  }
+
   constructor(private world: World) {}
 
   get pos(): Vector3 {
@@ -108,6 +215,7 @@ export class Player {
   }
 
   tick(dt: number, inp: MoveInput): void {
+    if (this.noclip) { this.tickNoclip(dt, inp); return; }
     const b = this.body;
     this.prevPos.copy(b.pos);
     this.prevEye = this.eye;

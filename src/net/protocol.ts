@@ -38,8 +38,9 @@ export interface ActorInfo {
   al: 0 | 1; // vivo
   kl: number;
   de: number;
+  /** Nível na escada e dinheiro da loja. */
   lv: number;
-  lk: number;
+  mo: number;
   w: WeaponId;
   x: number;
   y: number;
@@ -98,6 +99,8 @@ export type Msg =
   | { k: 'pk'; id: number }
   /** Cliente → host: minha arma maluca acabou. */
   | { k: 'spx'; w: SpecialId }
+  /** Cliente → host: quero comprar `item` na loja. */
+  | { k: 'buy'; item: string }
   | FireMsg
   | MeleeMsg;
 

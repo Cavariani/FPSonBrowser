@@ -205,23 +205,6 @@ add('plaft', 2, (rng, sr) => {
   return finalize(s, 0.7, 1.5, 0.04);
 });
 
-// ------------------------------------------------------------------ coxinha
-
-add('plop', 3, (rng, sr) => {
-  const s = mk(sr)(0.14);
-  addTone(s, { dur: 0.1, f0: jit(rng, 220, 0.15), f1: 700, pitchTau: 0.02, decay: 0.035, gain: 1, attack: 0.001 });
-  addNoise(s, rng, { dur: 0.05, attack: 0.001, decay: 0.02, gain: 0.3, filters: [{ type: 'lp', f: 600 }] });
-  return finalize(s, 0.4, 0, 0.03);
-});
-
-add('plopGun', 1, (rng, sr) => {
-  const s = mk(sr)(0.32);
-  addTone(s, { dur: 0.25, f0: 140, f1: 60, pitchTau: 0.025, decay: 0.08, gain: 1, attack: 0.001 });
-  addNoise(s, rng, { dur: 0.15, color: 'pink', attack: 0.002, decay: 0.04, gain: 0.8, filters: [{ type: 'lp', f: 1800, to: 500, shape: 'fast' }] });
-  addTone(s, { dur: 0.12, f0: 180, f1: 480, pitchTau: 0.03, decay: 0.04, gain: 0.4, attack: 0.002 });
-  return finalize(s, 0.6, 1.3, 0.05);
-});
-
 // ------------------------------------------------------------------ panela e dolly
 
 add('hissPanela', 2, (rng, sr) => {

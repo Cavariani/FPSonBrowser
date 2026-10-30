@@ -1,0 +1,56 @@
+/* ===================== Killstreaks-cheat (terminal hacker) ===================== */
+.hud { --hk: #39ff6a; --hk-dim: #1f9c42; }
+.hud .ch-esp { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.hud.dead .ch-esp, .hud.dead .ch-fx, .hud.dead .ch-run { display: none; }
+
+/* efeito de tela leve: scanlines + brilho verde nas bordas + log no canto */
+.hud .ch-fx { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+.hud .ch-fx.on { opacity: 1; box-shadow: inset 0 0 90px rgba(57, 255, 106, 0.22), inset 0 0 0 2px rgba(57, 255, 106, 0.35); animation: ch-flicker 3.1s steps(1) infinite; }
+.hud .ch-fx[data-cheat='wallhack'].on { box-shadow: inset 0 0 90px rgba(255, 40, 40, 0.22), inset 0 0 0 2px rgba(255, 60, 60, 0.35); }
+.hud .ch-fx[data-cheat='noclip'].on { box-shadow: inset 0 0 90px rgba(80, 200, 255, 0.2), inset 0 0 0 2px rgba(80, 200, 255, 0.35); }
+.hud .ch-scan {
+  position: absolute; inset: 0; opacity: 0.35;
+  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 2px, rgba(0, 30, 0, 0.35) 3px, rgba(0, 0, 0, 0) 4px);
+}
+.hud .ch-log {
+  position: absolute; right: 1em; top: 42%; margin: 0; text-align: right; white-space: pre;
+  font: 1em/1.15 var(--f-num); color: var(--hk); text-shadow: 0 0 6px rgba(57, 255, 106, 0.7), 1px 1px 0 #000; opacity: 0.8;
+}
+@keyframes ch-flicker { 0%, 100% { opacity: 1; } 47% { opacity: 0.82; } 49% { opacity: 1; } 83% { opacity: 0.9; } }
+
+/* notificações */
+.hud .ch-toasts { position: absolute; left: 50%; top: 9.6em; transform: translateX(-50%); display: flex; flex-direction: column; align-items: flex-start; gap: 0.35em; pointer-events: none; }
+.hud .ch-toast {
+  --n: 30; font: 1.35em/1.2 var(--f-num); color: var(--hk); background: rgba(0, 12, 2, 0.88); border: 1px solid var(--hk); border-left-width: 4px;
+  padding: 0.25em 0.7em; white-space: nowrap; overflow: hidden; text-shadow: 0 0 6px rgba(57, 255, 106, 0.6);
+  box-shadow: 0 0 14px rgba(57, 255, 106, 0.3); box-sizing: content-box;
+  width: calc(var(--n) * 1ch); animation: ch-type 0.8s steps(var(--n), end) both; transition: opacity 0.35s, transform 0.35s;
+}
+.hud .ch-toast.out { opacity: 0; transform: translateY(-8px); }
+@keyframes ch-type { from { width: 0; } }
+
+/* cheats guardados */
+.hud .ch-store {
+  position: absolute; left: 1.2em; bottom: 8.2em; min-width: 11em; display: none; padding: 0.3em 0.7em 0.4em;
+  font: 1.05em/1.2 var(--f-num); color: var(--hk); background: rgba(0, 12, 2, 0.7); border: 1px solid var(--hk-dim);
+  text-shadow: 1px 1px 0 #000; white-space: pre;
+}
+.hud .ch-store.on { display: block; }
+.hud .ch-store .hd { color: var(--hk-dim); }
+.hud .ch-store .row { opacity: 0.65; }
+.hud .ch-store .row.best { opacity: 1; animation: ch-blink 1s steps(2, jump-none) infinite; }
+.hud .ch-store .streak { color: #8fb89a; font-size: 0.85em; margin-top: 0.15em; }
+@keyframes ch-blink { 50% { opacity: 0.55; } }
+
+/* cheat rodando: texto + barra de 5 s */
+.hud .ch-run { position: absolute; left: 50%; bottom: 1.2em; transform: translateX(-50%); width: 17em; display: none; font: 1.25em/1.1 var(--f-num); color: var(--hk); text-shadow: 0 0 6px rgba(57, 255, 106, 0.6), 1px 1px 0 #000; }
+.hud .ch-run.on { display: block; }
+.hud .ch-run .ln { display: flex; justify-content: space-between; }
+.hud .ch-run .ch-bar { height: 0.45em; background: rgba(0, 0, 0, 0.7); border: 1px solid var(--hk); margin-top: 0.25em; position: relative; overflow: hidden; }
+.hud .ch-run .ch-bar b { position: absolute; inset: 0; transform-origin: left center; background: var(--hk); }
+.hud .ch-run[data-cheat='wallhack'] { color: #ff5a5a; text-shadow: 0 0 6px rgba(255, 50, 50, 0.6), 1px 1px 0 #000; }
+.hud .ch-run[data-cheat='wallhack'] .ch-bar { border-color: #ff5a5a; }
+.hud .ch-run[data-cheat='wallhack'] .ch-bar b { background: #ff3030; }
+.hud .ch-run[data-cheat='noclip'] { color: #6cd6ff; text-shadow: 0 0 6px rgba(80, 200, 255, 0.6), 1px 1px 0 #000; }
+.hud .ch-run[data-cheat='noclip'] .ch-bar { border-color: #6cd6ff; }
+.hud .ch-run[data-cheat='noclip'] .ch-bar b { background: #4fc3f7; }

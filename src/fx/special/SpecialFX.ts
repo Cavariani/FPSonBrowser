@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { bus } from '../../core/events';
 import type { Actor } from '../../game/Actor';
 import { SPECIALS, type BeamKind, type SpecialId, type StatusKind } from '../../game/special/defs';
+import { buildKiteModel } from './models';
 import { Overlay } from './overlay';
 import { ChunkPool, QuadPool, Ribbon, ringTexture, softTexture, starTexture } from './pools';
 
@@ -23,6 +24,8 @@ export interface FxHost {
   local(): Actor | null;
   statusLeft(id: string, kind: StatusKind): number;
   localBlind(): number;
+  /** Vapor do café na tela do jogador local, 0..1. */
+  localSteam(): number;
   groundY(x: number, y: number, z: number): number;
 }
 
@@ -35,12 +38,26 @@ interface Beam {
   end2: THREE.Vector3 | null;
   dir: THREE.Vector3;
   hit: boolean;
+  chop: boolean;
   local: boolean;
   acc: number;
   core: Ribbon | null;
   glow: Ribbon | null;
   arc: Ribbon | null;
   arcGlow: Ribbon | null;
+}
+
+/** Pipa no ar (placeholder visual): modelo + linha de cerol da mão até ela. */
+interface KiteFx {
+  model: THREE.Object3D;
+  line: Ribbon;
+  ttl: number;
+  origin: THREE.Vector3;
+  kite: THREE.Vector3;
+  shownOrigin: THREE.Vector3;
+  shownKite: THREE.Vector3;
+  hit: boolean;
+  fresh: boolean;
 }
 
 interface StarSet {
@@ -50,8 +67,75 @@ interface StarSet {
 const FEATHER = [0xffffff, 0xe8ecf4, 0xc9d0dc, 0xa8b0c0];
 const DROP = [0xd8802c, 0xe89a44, 0xff6a96, 0xf2c27a];
 const BEAN = [0x2b160c, 0x3f2212, 0x5a3418, 0x1c0e08, 0x6b4020];
+const CONFETTI = [0x2fe05a, 0xffd200, 0xffffff, 0x2a9bff, 0x2fe05a, 0xffd200];
+const PLASTER = [0xd8c8a8, 0xc8b490, 0xe8dcc4, 0xa89878];
+const RED_BITS = [0xd8342c, 0xb8241e, 0x8e1a16];
+const CLOTH = [0x3a5a8a, 0x5a6a3a, 0xe8e0d0, 0x2a2a2e];
+const COFFEE = [0x4a2a12, 0x5a3418, 0x3a1e0c];
 const RICE = [0xf6f2e4, 0xffffff, 0xece4cc];
 const LEAF = [0x6a8a3a, 0x8aa040, 0xa08040, 0xc8b070, 0x5a6a30];
+
+let _net: THREE.BufferGeometry | null = null;
+/** Rede do gol (grade de linhas abaulada, 2x1.3, normal +Z). */
+function netGeo(): THREE.BufferGeometry {
+  if (_net) return _net;
+  const v: number[] = [];
+  const W = 1, H = 0.66, n = 12, m = 8;
+  const bulge = (x: number, y: number) => -0.25 * (1 - (x / W) ** 2) * (1 - (y / H) ** 2);
+  for (let i = 0; i <= n; i++) {
+    const x = -W + (2 * W * i) / n;
+    for (let j = 0; j < m; j++) {
+      const y0 = -H + (2 * H * j) / m, y1 = -H + (2 * H * (j + 1)) / m;
+      v.push(x, y0, bulge(x, y0), x, y1, bulge(x, y1));
+    }
+  }
+  for (let j = 0; j <= m; j++) {
+    const y = -H + (2 * H * j) / m;
+    for (let i = 0; i < n; i++) {
+      const x0 = -W + (2 * W * i) / n, x1 = -W + (2 * W * (i + 1)) / n;
+      v.push(x0, y, bulge(x0, y), x1, y, bulge(x1, y));
+    }
+  }
+  // travessão e traves
+  v.push(-W, H, 0, W, H, 0, -W, H, 0, -W, -H, 0, W, H, 0, W, -H, 0);
+  _net = new THREE.BufferGeometry();
+  _net.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  _net.userData.lines = true;
+  return _net;
+}
+
+let _crack: THREE.BufferGeometry | null = null;
+/** Rachadura: raios quebrados saindo do centro (triângulos finos, normal +Z). */
+function crackGeo(): THREE.BufferGeometry {
+  if (_crack) return _crack;
+  const v: number[] = [];
+  let seed = 3;
+  const R = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+  const seg = (x0: number, y0: number, x1: number, y1: number, w: number) => {
+    const dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1;
+    const nx = (-dy / l) * w, ny = (dx / l) * w;
+    v.push(x0 + nx, y0 + ny, 0, x0 - nx, y0 - ny, 0, x1, y1, 0);
+  };
+  for (let k = 0; k < 9; k++) {
+    let a = (k / 9) * Math.PI * 2 + R() * 0.5, x = 0, y = 0, w = 0.05;
+    for (let s = 0; s < 4; s++) {
+      a += (R() - 0.5) * 0.9;
+      const l = 0.12 + R() * 0.16;
+      const nx = x + Math.cos(a) * l, ny = y + Math.sin(a) * l;
+      seg(x, y, nx, ny, w);
+      if (R() < 0.4) seg(nx, ny, nx + Math.cos(a + 1) * l * 0.6, ny + Math.sin(a + 1) * l * 0.6, w * 0.5);
+      x = nx; y = ny; w *= 0.7;
+    }
+  }
+  // buraco no meio
+  for (let i = 0; i < 7; i++) {
+    const a0 = (i / 7) * Math.PI * 2, a1 = ((i + 1) / 7) * Math.PI * 2, r = 0.09 + R() * 0.05;
+    v.push(0, 0, 0, Math.cos(a0) * r, Math.sin(a0) * r, 0, Math.cos(a1) * r, Math.sin(a1) * r, 0);
+  }
+  _crack = new THREE.BufferGeometry();
+  _crack.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  return _crack;
+}
 
 export class SpecialFX {
   private additive: QuadPool;
@@ -59,11 +143,15 @@ export class SpecialFX {
   private chunks: ChunkPool;
   private overlay = new Overlay();
   private beams = new Map<string, Beam>();
+  private kites = new Map<string, KiteFx>();
+  private kitePts: THREE.Vector3[] = [];
   private stars = new Map<string, StarSet>();
   private thirdHeld = new Map<string, { kind: SpecialId; obj: THREE.Object3D }>();
   private columns: { mesh: THREE.Mesh; t: number; kind: 'dolly' | 'panela' | 'ring' }[] = [];
   private colGeo = new THREE.CylinderGeometry(1, 1, 1, 14, 1, true);
   private ringGeo = new THREE.RingGeometry(0.6, 1, 28).rotateX(-Math.PI / 2);
+  /** Decalques temporários (rede do golaço, rachadura do rodo) que encaram a câmera na hora em que nascem. */
+  private stamps: { mesh: THREE.Object3D; mat: THREE.Material & { opacity: number }; t: number; life: number; pop: number; base: number }[] = [];
 
   // arma na mão (1ª pessoa)
   private heldRoot = new THREE.Group();
@@ -97,17 +185,21 @@ export class SpecialFX {
     this.soft.clear();
     this.chunks.clear();
     for (const id of [...this.beams.keys()]) this.dropBeam(id);
+    for (const id of [...this.kites.keys()]) this.dropKite(id);
     for (const s of this.stars.values()) for (const sp of s.sprites) this.scene.remove(sp);
     this.stars.clear();
     for (const t of this.thirdHeld.values()) t.obj.removeFromParent();
     this.thirdHeld.clear();
     for (const c of this.columns) this.scene.remove(c.mesh);
     this.columns.length = 0;
+    for (const st of this.stamps) { this.scene.remove(st.mesh); st.mat.dispose(); }
+    this.stamps.length = 0;
     this.setHeld(null);
   }
 
   clearActor(id: string): void {
     for (const k of [...this.beams.keys()]) if (k.startsWith(id + ':')) this.dropBeam(k);
+    this.dropKite(id);
     const s = this.stars.get(id);
     if (s) { for (const sp of s.sprites) this.scene.remove(sp); this.stars.delete(id); }
     const t = this.thirdHeld.get(id);
@@ -150,7 +242,7 @@ export class SpecialFX {
       let b = this.beams.get(key);
       if (!b) {
         b = {
-          kind: e.kind, actorId: e.actorId, ttl: 0, origin: new V(), end: new V(), end2: null, dir: new V(), hit: false, local: e.local, acc: 0,
+          kind: e.kind, actorId: e.actorId, ttl: 0, origin: new V(), end: new V(), end2: null, dir: new V(), hit: false, chop: false, local: e.local, acc: 0,
           core: null, glow: null, arc: null, arcGlow: null,
         };
         if (e.kind === 'lorenzetti') {
@@ -166,13 +258,71 @@ export class SpecialFX {
       b.end.copy(e.end);
       b.dir.copy(e.dir);
       b.hit = e.hit;
+      b.chop = !!e.chop;
       if (e.end2) (b.end2 ??= new V()).copy(e.end2); else b.end2 = null;
     });
 
+    bus.on('special:kite', (e) => {
+      if (!e.on) { this.dropKite(e.actorId); return; }
+      let k = this.kites.get(e.actorId);
+      if (!k) {
+        const model = buildKiteModel();
+        model.scale.setScalar(2.4);
+        this.scene.add(model);
+        const line = new Ribbon(this.scene, 6, 0xfff4d0, 0.85);
+        k = {
+          model, line, ttl: 0, origin: new V(), kite: new V(), shownOrigin: e.origin.clone(), shownKite: e.origin.clone(), hit: false, fresh: true,
+        };
+        this.kites.set(e.actorId, k);
+      }
+      k.ttl = e.local ? 0.15 : 0.35;
+      k.origin.copy(e.origin);
+      k.kite.copy(e.kite);
+      k.hit = e.hit;
+    });
+
+    bus.on('special:golaco', (e) => {
+      // GOLAÇO: clarão, rede balançando atrás da vítima, chuva de confete verde-amarelo
+      this.flashAt(e.pos, 0xffffff, 3.6);
+      this.flashAt(e.pos, 0xffe14a, 2.2);
+      this.ring(e.pos, 0xa6ee2f, 6, 0.7);
+      this.stamp(e.pos, netGeo(), 0xffffff, 1.6, 1.6, 2.2, 0.9);
+      const gy = this.host.groundY(e.pos.x, e.pos.y, e.pos.z);
+      for (let i = 0; i < 90; i++) {
+        this.chunks.spawn(e.pos.x, e.pos.y + 0.3, e.pos.z, rnd(7), rr(4, 12), rnd(7), pick(CONFETTI), {
+          life: rr(1.6, 2.8), sx: 0.07, sy: 0.012, sz: 0.1, gravity: 9, floor: gy + 0.02, flutter: true, spin: 10, shrink: 0.3,
+        });
+      }
+      for (let i = 0; i < 26; i++) {
+        this.additive.spawn(e.pos.x, e.pos.y + 0.3, e.pos.z, rnd(6), rr(2, 9), rnd(6), {
+          life: rr(0.5, 1), size0: rr(0.15, 0.3), size1: 0.03, c0: 0xffffff, c1: pick(CONFETTI), alpha: 1, gravity: 8, drag: 1,
+        });
+      }
+    });
+
+    bus.on('special:slam', (e) => {
+      // espatifou na parede: rachadura, reboco caindo, poeira grossa e estrelinhas
+      const k = Math.min(1.6, 0.6 + e.speed / 25);
+      this.flashAt(e.pos, 0xffe0b0, 2 * k);
+      this.stamp(_a.copy(e.pos).setY(e.pos.y + 1.0), crackGeo(), 0x1a1410, 1.4 * k, 0, 6, 0.0);
+      for (let i = 0; i < 12; i++) this.puff(_b.copy(e.pos).setY(e.pos.y + rr(0.2, 1.6)), 0xcdbfa8, 1.1 * k, 1.2);
+      const gy = this.host.groundY(e.pos.x, e.pos.y, e.pos.z);
+      for (let i = 0; i < 26; i++) {
+        this.chunks.spawn(e.pos.x + rnd(0.4), e.pos.y + rr(0.4, 1.8), e.pos.z + rnd(0.4), rnd(4), rr(1, 5), rnd(4), pick(PLASTER), {
+          life: rr(1.5, 3), sx: rr(0.05, 0.14), sy: rr(0.03, 0.08), sz: rr(0.05, 0.14), gravity: 16, floor: gy + 0.03, spin: 12, shrink: 0.2,
+        });
+      }
+      this.sparkle(_a.copy(e.pos).setY(e.pos.y + 1.6), 0xffe14a, 14, 4);
+    });
+
     bus.on('special:fire', (e) => {
-      if (e.kind === 'coxinha') {
-        this.flashAt(e.origin, 0xffd070, 0.7);
-        for (let i = 0; i < 6; i++) this.puff(_a.copy(e.origin).addScaledVector(e.dir, rr(0.1, 0.8)), 0xd8c8a0, 0.3, 0.7);
+      if (e.kind === 'bola') {
+        this.puff(e.origin, 0xd8d0c0, 0.4, 0.5);
+        this.sparkle(e.origin, 0xffffff, 6, 3);
+      } else if (e.kind === 'rodo') {
+        for (let i = 0; i < 5; i++) this.puff(_a.copy(e.origin).addScaledVector(e.dir, rr(0.4, 1.8)), 0xdde8f0, 0.35, 0.4);
+      } else if (e.kind === 'pipa') {
+        this.sparkle(e.origin, 0xe040f0, 10, 3);
       } else if (e.kind === 'pombo') {
         for (let i = 0; i < 5; i++) this.feather(e.origin, 1.5);
       } else if (e.kind === 'estilingue') {
@@ -187,16 +337,30 @@ export class SpecialFX {
     bus.on('special:hit', (e) => {
       if (e.kind === 'pombo') for (let i = 0; i < 16; i++) this.feather(e.pos, 3);
       else if (e.kind === 'chinelo') this.sparkle(e.pos, 0xffd200, 14, 5);
-      else if (e.kind === 'coxinha') for (let i = 0; i < 4; i++) this.crumb(e.pos);
+      else if (e.kind === 'bola') this.sparkle(e.pos, 0xa6ee2f, 10, 4);
+      else if (e.kind === 'rodo') {
+        this.flashAt(e.pos, 0xffffff, 1.6);
+        this.sparkle(e.pos, 0x1fe58a, 14, 5);
+        // respingo de água do rodo
+        for (let i = 0; i < 14; i++) {
+          this.additive.spawn(e.pos.x, e.pos.y, e.pos.z, rnd(4), rr(1, 4), rnd(4), { life: rr(0.3, 0.6), size0: 0.1, size1: 0.03, c0: 0xcfeeff, c1: 0x3a8cff, alpha: 0.9, gravity: 12 });
+        }
+      } else if (e.kind === 'brick' && e.headshot) {
+        // BONK: estrelinhas
+        this.flashAt(e.pos, 0xffe14a, 1.6);
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2;
+          this.additive.spawn(e.pos.x, e.pos.y + 0.1, e.pos.z, Math.cos(a) * 3, rr(1, 3), Math.sin(a) * 3, {
+            life: rr(0.5, 0.8), size0: 0.22, size1: 0.05, c0: 0xffffff, c1: 0xffd200, alpha: 1, gravity: 4, drag: 2,
+          });
+        }
+      }
       if (e.killed) this.flashAt(e.pos, 0xffffff, 1);
     });
 
     bus.on('special:bounce', (e) => {
       if (e.speed > 3 && (e.kind === 'bottle' || e.kind === 'panela')) this.puff(e.pos, 0xe8dcc8, 0.3, 0.5);
-    });
-
-    bus.on('special:stick', (e) => {
-      this.crumb(e.pos);
+      else if (e.speed > 4 && e.kind === 'bola') this.puff(e.pos, 0xd8d0c0, 0.35, 0.4);
     });
 
     bus.on('special:hiss', (e) => {
@@ -219,6 +383,10 @@ export class SpecialFX {
 
     bus.on('status:apply', (e) => {
       if (e.local && e.kind === 'blind') this.overlay.newSplat();
+      if (e.kind === 'steam') {
+        const a = this.actorById(e.actorId);
+        if (a && !a.isLocal) for (let i = 0; i < 4; i++) this.puff(_a.set(a.pos.x, a.pos.y + 1.4, a.pos.z), 0xffffff, 0.6, 0.9);
+      }
       if (e.kind === 'burn' || e.kind === 'shock') {
         const a = this.actorById(e.actorId);
         if (a && !a.isLocal) this.flashAt(_a.set(a.pos.x, a.pos.y + 1.1, a.pos.z), e.kind === 'burn' ? 0xffa040 : 0xaadcff, 0.9);
@@ -258,12 +426,43 @@ export class SpecialFX {
     });
   }
 
-  private crumb(p: THREE.Vector3): void {
-    const gy = this.host.groundY(p.x, p.y, p.z);
-    for (let i = 0; i < 3; i++) {
-      this.chunks.spawn(p.x, p.y + 0.05, p.z, rnd(1.6), rr(1, 2.4), rnd(1.6), pick([0xe0a030, 0xc88820, 0xf2c060]), {
-        life: rr(0.5, 1), sx: 0.04, sy: 0.04, sz: 0.04, gravity: 14, floor: gy + 0.02, spin: 12,
-      });
+  /** Decalque que encara a câmera ao nascer (rede/rachadura). pop = escala extra no começo; wobble = balanço. */
+  private stamp(p: THREE.Vector3, geo: THREE.BufferGeometry, color: number, size: number, pop: number, life: number, wobble: number): void {
+    const line = !!geo.userData.lines;
+    const mat = line
+      ? new THREE.LineBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false, fog: false })
+      : new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 });
+    const m: THREE.Object3D = line ? new THREE.LineSegments(geo, mat) : new THREE.Mesh(geo, mat);
+    m.position.copy(p);
+    _c.copy(this.camera.position);
+    _c.y = p.y;
+    m.lookAt(_c);
+    m.scale.setScalar(size);
+    m.userData.wobble = wobble;
+    this.scene.add(m);
+    this.stamps.push({ mesh: m, mat: mat as THREE.Material & { opacity: number }, t: 0, life, pop, base: size });
+    if (this.stamps.length > 10) {
+      const old = this.stamps.shift()!;
+      this.scene.remove(old.mesh);
+      old.mat.dispose();
+    }
+  }
+
+  private updateStamps(dt: number): void {
+    for (let i = this.stamps.length - 1; i >= 0; i--) {
+      const st = this.stamps[i];
+      st.t += dt;
+      const k = st.t / st.life;
+      const grow = st.pop > 0 ? Math.min(1, st.t * 8) * (1 + Math.exp(-st.t * 6) * Math.sin(st.t * 30) * 0.12) : 1;
+      st.mesh.scale.setScalar(st.base * grow);
+      const w = st.mesh.userData.wobble as number;
+      if (w) st.mesh.scale.z = st.base * (1 + Math.sin(st.t * 16) * Math.exp(-st.t * 3) * w * 2);
+      st.mat.opacity = (st.pop > 0 ? 1 : 0.85) * Math.min(1, (1 - k) * 3);
+      if (k >= 1) {
+        this.scene.remove(st.mesh);
+        st.mat.dispose();
+        this.stamps.splice(i, 1);
+      }
     }
   }
 
@@ -350,6 +549,57 @@ export class SpecialFX {
     if (!b) return;
     b.ttl = 0;
     b.core?.hide(); b.glow?.hide(); b.arc?.hide(); b.arcGlow?.hide();
+  }
+
+  private dropKite(id: string): void {
+    const k = this.kites.get(id);
+    if (!k) return;
+    this.scene.remove(k.model);
+    this.scene.remove(k.line.mesh);
+    this.kites.delete(id);
+  }
+
+  private updateKites(dt: number): void {
+    const cam = this.camera.position;
+    for (const [id, k] of this.kites) {
+      k.ttl -= dt;
+      if (k.ttl <= 0) { this.dropKite(id); continue; }
+      const f = k.fresh ? 1 : 1 - Math.exp(-18 * dt);
+      k.fresh = false;
+      k.shownOrigin.lerp(k.origin, f);
+      k.shownKite.lerp(k.kite, f);
+      const m = k.model;
+      m.position.copy(k.shownKite);
+      m.lookAt(k.shownOrigin);
+      m.rotateX(-0.45);
+      m.rotateZ(Math.sin(this.time * 3 + k.kite.x) * 0.25);
+      const tail = m.userData.tail as THREE.Object3D | undefined;
+      if (tail) tail.rotation.x = Math.sin(this.time * 4) * 0.25;
+      const pts = this.kitePts;
+      for (let i = 0; i < 6; i++) {
+        const p = pts[i] ?? (pts[i] = new V());
+        p.lerpVectors(k.shownOrigin, k.shownKite, i / 5);
+      }
+      // cerol: a linha cintila (vidro moído); cortando, pisca vermelho e solta faísca
+      const glint = Math.random() < 0.25;
+      k.line.set(pts, k.hit ? 0.045 + Math.random() * 0.03 : glint ? 0.032 : 0.022, cam);
+      (k.line.mesh.material as THREE.MeshBasicMaterial).color.setHex(k.hit ? (Math.random() < 0.5 ? 0xff3030 : 0xffffff) : glint ? 0xffffff : 0xffe8b8);
+      if (Math.random() < dt * 14) {
+        const t = Math.random();
+        this.additive.spawn(
+          k.shownOrigin.x + (k.shownKite.x - k.shownOrigin.x) * t, k.shownOrigin.y + (k.shownKite.y - k.shownOrigin.y) * t, k.shownOrigin.z + (k.shownKite.z - k.shownOrigin.z) * t,
+          0, 0, 0, { life: 0.12, size0: 0.12, size1: 0.02, c0: 0xffffff, c1: 0xb8e8ff, alpha: 1 },
+        );
+      }
+      if (k.hit && Math.random() < 0.5) {
+        const t = Math.random();
+        this.additive.spawn(
+          k.shownOrigin.x + (k.shownKite.x - k.shownOrigin.x) * t, k.shownOrigin.y + (k.shownKite.y - k.shownOrigin.y) * t, k.shownOrigin.z + (k.shownKite.z - k.shownOrigin.z) * t,
+          rnd(3), rnd(3), rnd(3), { life: 0.25, size0: 0.2, size1: 0.02, c0: 0xffffff, c1: 0xff3030, alpha: 1, gravity: 6 },
+        );
+        if (Math.random() < 0.3) this.flashAt(k.shownKite, 0xff8080, 0.5);
+      }
+    }
   }
 
   private dropBeam(key: string): void {
@@ -460,6 +710,55 @@ export class SpecialFX {
             life: 0.55, size0: 0.3, size1: 3.4, c0: 0xe6f6ff, c1: 0xffffff, alpha: 0.28, hold: 0.1, spin: 0.5,
           });
         }
+        // hélice picotando (perto): fagulhas vermelhas na frente do ventilador
+        if (b.chop && Math.random() < dt * 60) {
+          const d = rr(0.6, 3.2);
+          const x = b.origin.x + b.dir.x * d + rnd(0.4), y = b.origin.y + b.dir.y * d + rnd(0.4), z = b.origin.z + b.dir.z * d + rnd(0.4);
+          this.additive.spawn(x, y, z, rnd(3), rnd(3), rnd(3), {
+            life: rr(0.12, 0.25), size0: rr(0.08, 0.18), size1: 0.02, c0: 0xffe0d0, c1: 0xff2a20, alpha: 1, gravity: 4,
+          });
+          // picadinho: penas, retalhos de roupa e cubinhos vermelhos voando pros lados
+          if (Math.random() < 0.5) {
+            const gy = this.host.groundY(x, y, z);
+            const r = Math.random();
+            if (r < 0.4) this.feather(_a.set(x, y, z), 3);
+            else this.chunks.spawn(x, y, z, rnd(4) + b.dir.x * 3, rr(1, 4), rnd(4) + b.dir.z * 3, r < 0.75 ? pick(RED_BITS) : pick(CLOTH), {
+              life: rr(0.6, 1.2), sx: rr(0.03, 0.07), sy: rr(0.03, 0.06), sz: rr(0.03, 0.07), gravity: 14, floor: gy + 0.02, spin: 16, shrink: 0.3,
+            });
+          }
+        }
+        break;
+      }
+      case 'cafe': {
+        this.flameAcc += dt * 140;
+        const n = Math.floor(this.flameAcc);
+        this.flameAcc -= n;
+        for (let i = 0; i < n; i++) {
+          const sp = rr(12, 16);
+          _a.set(rnd(1), rnd(1), rnd(1)).multiplyScalar(0.14 * sp);
+          this.soft.spawn(b.origin.x, b.origin.y, b.origin.z, b.dir.x * sp + _a.x, b.dir.y * sp + _a.y + 0.6, b.dir.z * sp + _a.z, {
+            life: rr(0.3, 0.5), size0: rr(0.08, 0.14), size1: rr(0.3, 0.5), c0: 0x7a4a1a, c1: 0xb88850, alpha: 0.8, drag: 1.2, gravity: 5,
+          });
+          if (Math.random() < 0.25) {
+            this.soft.spawn(b.origin.x + b.dir.x * rr(0.5, 4), b.origin.y + b.dir.y * rr(0.5, 4), b.origin.z + b.dir.z * rr(0.5, 4), rnd(0.5), rr(0.8, 2), rnd(0.5), {
+              life: rr(0.5, 0.9), size0: 0.2, size1: 0.9, c0: 0xffffff, c1: 0xdddddd, alpha: 0.3, drag: 1.2,
+            });
+          }
+        }
+        if (b.hit) this.additive.spawn(b.end.x + rnd(0.3), b.end.y + rnd(0.3), b.end.z + rnd(0.3), 0, 1.2, 0, { life: 0.3, size0: 0.3, size1: 0.7, c0: 0xffc880, c1: 0x884400, alpha: 0.7 });
+        // gotas de café caindo em arco e vapor no ponto de impacto
+        if (Math.random() < dt * 40) {
+          const sp = rr(9, 13);
+          const gy = this.host.groundY(b.origin.x, b.origin.y, b.origin.z);
+          this.chunks.spawn(b.origin.x, b.origin.y, b.origin.z, b.dir.x * sp + rnd(0.8), b.dir.y * sp + rr(0.5, 2), b.dir.z * sp + rnd(0.8), pick(COFFEE), {
+            life: rr(0.6, 1.1), sx: 0.04, sy: 0.04, sz: 0.06, gravity: 14, floor: gy + 0.02, spin: 4, shrink: 0.5,
+          });
+        }
+        if (Math.random() < dt * 20) {
+          this.soft.spawn(b.end.x + rnd(0.3), b.end.y, b.end.z + rnd(0.3), rnd(0.4), rr(0.8, 1.8), rnd(0.4), {
+            life: rr(0.6, 1.1), size0: 0.3, size1: 1.1, c0: 0xffffff, c1: 0xd8d8d8, alpha: 0.35, drag: 1,
+          });
+        }
         break;
       }
     }
@@ -488,7 +787,9 @@ export class SpecialFX {
       }
     }
 
+    this.updateKites(dt);
     this.updateColumns(dt);
+    this.updateStamps(dt);
     this.updateActors(dt);
     this.updateHeld(dt, ctx);
 
@@ -499,6 +800,7 @@ export class SpecialFX {
     const l = this.host.local();
     this.overlay.update(dt, {
       blind: this.host.localBlind(),
+      steam: this.host.localSteam(),
       burning: !!l && this.host.statusLeft(l.id, 'burn') > 0,
       stunned: !!l && this.host.statusLeft(l.id, 'stun') > 0,
       shocked: !!l && this.host.statusLeft(l.id, 'shock') > 0,

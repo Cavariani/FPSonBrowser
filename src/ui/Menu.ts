@@ -76,7 +76,7 @@ function buildSettings(): SettingsPanel {
   const modeRow = h('div', 'srow');
   modeRow.append(h('label', '', 'Modo'));
   const seg = h('div', 'seg');
-  const modes: [Settings['mode'], string][] = [['gungame', 'GUN GAME'], ['treino', 'TREINO']];
+  const modes: [Settings['mode'], string][] = [['gungame', 'LOJA'], ['treino', 'TREINO']];
   const segBtns = modes.map(([m, t]) => {
     const b = h('button', '', t); b.type = 'button';
     b.addEventListener('click', () => { saveSettings({ mode: m }); sync(); });
@@ -102,7 +102,7 @@ function controlsList(): HTMLElement {
     ['W A S D', 'Andar'], ['ESPAÇO', 'Pular (segure: bunny hop)'], ['CTRL / C', 'Agachar (correndo: slide)'],
     ['SHIFT', 'Correr (liga/desliga)'],
     ['R', 'Recarregar'], ['MOUSE ESQ.', 'Atirar'], ['MOUSE DIR.', 'Mirar / golpe forte'], ['TAB', 'Placar'],
-    ['1 - 6', 'Trocar arma (treino)'], ['ESC', 'Pausar'],
+    ['B', 'Loja (1-2 categoria, 1-6 comprar)'], ['V', 'Ativar cheat'], ['1 - 6', 'Trocar arma (treino)'], ['ESC', 'Pausar'],
   ];
   for (const [k, d] of items) {
     const row = h('div');

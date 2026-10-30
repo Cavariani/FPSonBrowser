@@ -37,18 +37,19 @@ function paperRes() {
     const p = g.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), y = p.getY(i);
-      p.setZ(i, -(x * x) * 1.4 - Math.max(0, -y - 0.12) * 0.25);
+      p.setZ(i, -(x * x) * 0.8 - Math.max(0, -y - 0.2) * 0.2);
     }
     g.rotateY(Math.PI);
     g.computeVertexNormals();
     PAPER_GEO = g;
-    TAPE_GEO = new THREE.BoxGeometry(0.2, 0.055, 0.006);
+    TAPE_GEO = new THREE.BoxGeometry(0.32, 0.07, 0.006);
     TAPE_MAT = new THREE.MeshLambertMaterial({ color: 0xe6d3a3, transparent: true, opacity: 0.86 });
   }
   return { geo: PAPER_GEO, tapeGeo: TAPE_GEO!, tapeMat: TAPE_MAT! };
 }
 
-const PAPER_W = 0.34, PAPER_H = 0.42;
+// Folha grande de propósito: a foto tem que ser reconhecível de longe (e fica mais engraçado)
+const PAPER_W = 0.62, PAPER_H = 0.74;
 
 /** Compõe a foto numa "folha" branca (aspect-fit centralizado). */
 function composePaper(tex: THREE.Texture): THREE.Texture {
@@ -465,7 +466,7 @@ export class CharacterModel {
 
   private attachPaper(): void {
     this.head.add(this.paper);
-    this.paper.position.set(0, 0.425, -0.215);
+    this.paper.position.set(0, 0.5, -0.215);
     this.paper.rotation.set(0, 0, this.paperTilt);
     this.paperFlying = false;
   }
@@ -507,12 +508,16 @@ export class CharacterModel {
       const o = this.specialObj;
       const s = Math.sin(Math.min(1, this.swing) * Math.PI);
       o.position.set(0.12 - s * 0.1, -0.12 + s * 0.2, -0.42 - s * 0.25 + this.kick * 0.06);
-      o.rotation.set(s * -0.8 - this.kick * 0.2, 0, 0);
+      const tp = HELD_TP[this.specialId];
+      const base = tp.rx ?? 0;
+      // com item "em pé" (rodo), o golpe vira uma varrida lateral de beisebol
+      o.rotation.set(base + s * (base ? -1.4 : -0.8) - this.kick * 0.2, base ? s * 1.2 : 0, 0);
       this.reach(this.armR, _v2.copy(o.position).add(_tmpOff.set(0, 0, 0.04)), k);
-      const L = HELD_TP[this.specialId].left;
+      const L = tp.left;
       if (L) {
         const sc = o.scale.x;
-        this.reach(this.armL, _v2.set(o.position.x + L[0] * sc, o.position.y + L[1] * sc, o.position.z + L[2] * sc), k);
+        _tmpOff.set(L[0] * sc, L[1] * sc, L[2] * sc).applyQuaternion(o.quaternion);
+        this.reach(this.armL, _v2.copy(o.position).add(_tmpOff), k);
       } else {
         const sw = Math.sin(this.phase) * 0.7 * this.amp;
         _v2.set(-0.36, -Math.cos(sw) * 0.47, -Math.sin(sw) * 0.47);
@@ -598,7 +603,7 @@ export class CharacterModel {
 
   onFire(): void {
     if (this.dead) return;
-    if (this.weaponId === 'knife' || (this.specialId && this.specialId !== 'coxinha')) this.swing = 1;
+    if (this.weaponId === 'knife' || this.specialId) this.swing = 1;
     else this.kick = 1;
   }
 

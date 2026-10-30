@@ -27,13 +27,21 @@ Não há testes automatizados.
 
 ## Regras do projeto
 
-- **Armas malucas e P2P sem servidor são pilares**: não remover nem trocar sem o Pedro pedir. Todo o resto (gun game, cheats por killstreak, balanceamento, mapas, UI) está aberto a mudança.
+- **Armas malucas e P2P sem servidor são pilares**: não remover nem trocar sem o Pedro pedir. Todo o resto (loja, cheats por killstreak, balanceamento, mapas, UI) está aberto a mudança.
 - Ids de arma especial (`SpecialId` em `game/special/defs.ts`) são fixos e usados por arte, áudio e HUD: ao adicionar/renomear, atualizar os três.
 - Números de balanceamento ficam em `defs.ts` (`SPECIALS`, `p: {...}`); mexa ali, não espalhe constantes.
 - Rede: o host é autoritativo. **Não precisa manter compatibilidade entre versões**: pode mudar o protocolo à vontade, todo mundo recarrega a página.
 - Sem backend, sem contas, sem dependências pesadas novas sem necessidade. Assets sempre procedurais.
 - Linguagem do jogo: PT-BR, tom normal de FPS (sem tema de escritório forçado). Comentários e textos de UI em português.
 - Estilo: seguir o código ao redor (comentários curtos em PT explicando o "porquê", sem JSDoc exagerado).
+
+## Direção de design (escada de malucas + loja de comuns, implementado)
+
+- **Escada:** 13 malucas, da mais fraca à mais forte (`LADDER` em `src/game/shop.ts`, ordem estimada pelos números, sem playtest). Todo mundo nasce com a do seu nível; 1 kill sobe um nível; quem mata no último nível (Tijolo) vence.
+- **Loja (tecla B, sem rounds):** só armas comuns (faca, pistola, smg, escopeta, fuzil, sniper) e extras (colete, vida cheia, munição das malucas). Malucas NÃO se vendem. Comprar uma comum substitui a maluca na mão até morrer; ao respawnar volta a maluca do nível. Compra validada no host (`Match.buy`, `canBuy`).
+- **Dinheiro:** $500 inicial, $300 por kill (`shop.ts`). Colete absorve 50% do dano até 100 pontos.
+- **Munição das malucas regenera sozinha**, devagar (`regenAmmo` em `Specials.ts`; `REGEN_FULL`/`regen` em `defs.ts`).
+- Sem pickups no mapa no modo da loja. O id do modo continua `'gungame'` (nome antigo) e significa "modo da loja"; `'treino'` é o sandbox (pickups no mapa + 1-6 troca arma).
 
 ## Fluxo de trabalho
 

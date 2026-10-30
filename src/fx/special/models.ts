@@ -37,8 +37,6 @@ const C = {
   orange: 0xf08a24,
   aluminium: 0xc9ccd4,
   aluminiumDark: 0x9a9ea8,
-  coxinha: 0xe0a030,
-  coxinhaDark: 0xb87818,
   pvc: 0xe8e8e0,
   fanBlue: 0x7cc4ea,
   brick: 0xb8552e,
@@ -59,12 +57,10 @@ const C = {
 export interface HeldParts {
   /** Ponto de saída (cano/boca), filho do item. */
   muzzle: THREE.Object3D;
-  /** Hélice do ventilador / canos da metralhadora de coxinha (giram em z). */
+  /** Hélice do ventilador (gira em z). */
   spinner?: THREE.Object3D;
   /** Disco de "borrão" da hélice (opacidade conforme a velocidade). */
   blur?: THREE.Mesh;
-  /** Manivela (coxinha). */
-  crank?: THREE.Object3D;
   /** Pino/válvula da panela. */
   valve?: THREE.Object3D;
   /** Botão do aerosol. */
@@ -82,8 +78,9 @@ export interface HeldParts {
   head?: THREE.Object3D;
   /** Brilho da resistência (lorenzetti). */
   glow?: THREE.Sprite;
-  /** Coxinhas na bacia (pulam quando atira). */
-  bowl?: THREE.Object3D;
+  /** Pipa: carretel com a linha enrolada (gira quando a pipa está no ar) e a ponta da linha. */
+  reel?: THREE.Object3D;
+  line?: THREE.Object3D;
 }
 
 // ------------------------------------------------------------------ helpers
@@ -410,67 +407,6 @@ function panela(): { g: THREE.Group; p: HeldParts } {
   return { g, p: { muzzle: anchor(valve, 0, 0.05, 0), valve } };
 }
 
-/** Coxinha (nariz em +Z). */
-function coxinhaGeo(): THREE.BufferGeometry {
-  return cached('cx', () => {
-    const b = new Builder();
-    b.cylZ(C.coxinha, 0.055, 0.12, 0, 0, 0.02, 7, 0.006);
-    b.push(new THREE.IcosahedronGeometry(0.058, 0), C.coxinhaDark, 0, 0, -0.045);
-    b.push(new THREE.IcosahedronGeometry(0.05, 0), C.coxinha, 0, 0.004, -0.05);
-    return b.build();
-  });
-}
-
-/** Metralhadora giratória de coxinha: canos de PVC, tambor de fritadeira, bacia de coxinhas e manivela. */
-function coxinhaGun(): { g: THREE.Group; p: HeldParts } {
-  const g = new THREE.Group();
-  g.add(M(cached('cxg', () => {
-    const b = new Builder();
-    b.box(C.dark, 0.034, 0.1, 0.044, 0, -0.012, 0.012, -0.25); // cabo
-    b.box(C.dark, 0.01, 0.008, 0.06, 0, 0.015, -0.035);
-    b.cylZ(C.aluminium, 0.07, 0.17, 0, 0.08, -0.08, 10); // tambor
-    b.cylZ(C.aluminiumDark, 0.073, 0.012, 0, 0.08, -0.03, 10);
-    b.cylZ(C.aluminiumDark, 0.073, 0.012, 0, 0.08, -0.15, 10);
-    b.cylZ(C.dark, 0.03, 0.05, 0, 0.08, 0.02, 8);
-    b.box(C.dark, 0.032, 0.08, 0.036, 0, 0.0, -0.2, 0.1); // empunhadura da frente
-    // bacia de alumínio em cima
-    b.push(new THREE.CylinderGeometry(0.085, 0.05, 0.05, 10), C.aluminium, 0, 0.175, -0.07);
-    b.box(C.aluminiumDark, 0.03, 0.04, 0.03, 0, 0.14, -0.07);
-    // funil laranja ligando bacia e tambor
-    b.push(new THREE.CylinderGeometry(0.03, 0.012, 0.04, 8), C.orange, 0.0, 0.14, -0.12);
-    return b.build();
-  })));
-  const bowl = new THREE.Group();
-  const cx = coxinhaGeo();
-  const spots: [number, number, number, number][] = [[0, 0.21, -0.07, 0.3], [0.04, 0.205, -0.05, 1.2], [-0.04, 0.205, -0.09, 2.2], [0.02, 0.215, -0.11, 4], [-0.03, 0.21, -0.03, 5.1]];
-  for (const [x, y, z, r] of spots) {
-    const m = M(cx, x, y, z);
-    m.rotation.set(-1.1, r, 0);
-    m.scale.setScalar(0.7);
-    bowl.add(m);
-  }
-  g.add(bowl);
-  const spinner = new THREE.Group();
-  spinner.add(M(cached('cxg-bar', () => {
-    const b = new Builder();
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      b.cylZ(C.pvc, 0.015, 0.26, Math.cos(a) * 0.04, Math.sin(a) * 0.04, -0.13, 7);
-      b.cylZ(C.coxinha, 0.012, 0.012, Math.cos(a) * 0.04, Math.sin(a) * 0.04, -0.262, 6); // coxinha na boca
-    }
-    b.cylZ(C.aluminiumDark, 0.062, 0.012, 0, 0, -0.2, 10);
-    b.cylZ(C.aluminiumDark, 0.062, 0.012, 0, 0, -0.04, 10);
-    return b.build();
-  })));
-  spinner.position.set(0, 0.08, -0.16);
-  g.add(spinner);
-  const crank = new THREE.Group();
-  crank.add(M(cached('cxg-crank', () => new Builder().box(C.steel, 0.008, 0.07, 0.01, 0, 0.035, 0).box(C.red, 0.03, 0.014, 0.014, -0.015, 0.07, 0).build())));
-  crank.position.set(-0.075, 0.08, -0.06);
-  g.add(crank);
-  return { g, p: { muzzle: anchor(g, 0, 0.08, -0.44), spinner, crank, bowl } };
-}
-
 /** Ventilador de mesa Arno: segurado pelo pescoço, base pendurada embaixo. */
 function ventilador(): { g: THREE.Group; p: HeldParts } {
   const g = new THREE.Group();
@@ -540,8 +476,155 @@ function tijolo(): { g: THREE.Group; p: HeldParts } {
   return { g, p: { muzzle: anchor(g, -0.095, 0, -0.14) } };
 }
 
+// ------------------------------------------------------------------ armas novas (placeholders: o artista refina)
+
+/** Bola de futebol: icosfera branca com remendos pretos nos 12 vértices (raio 0.11 m). */
+function ballGeo(): THREE.BufferGeometry {
+  return cached('bola', () => {
+    const R = 0.11;
+    const b = new Builder();
+    b.push(new THREE.IcosahedronGeometry(R, 1), C.white);
+    const t = (1 + Math.sqrt(5)) / 2;
+    const vs: [number, number, number][] = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]];
+    const z = new THREE.Vector3(0, 0, 1);
+    for (const [x, y, w] of vs) {
+      const n = new THREE.Vector3(x, y, w).normalize();
+      const g = new THREE.CircleGeometry(0.045, 5);
+      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(z, n));
+      g.translate(n.x * R * 1.01, n.y * R * 1.01, n.z * R * 1.01);
+      b.push(g, C.black);
+    }
+    return b.build();
+  });
+}
+/** Bola na mão (apoiada na palma, um palmo à frente). */
+function bola(): { g: THREE.Group; p: HeldParts } {
+  const g = new THREE.Group();
+  g.add(M(ballGeo(), 0, 0.03, -0.12));
+  return { g, p: { muzzle: anchor(g, 0, 0.03, -0.24) } };
+}
+
+/** Rótulo da lata de linha (lata de achocolatado reaproveitada, clássico). */
+const canLabel = (c: CanvasRenderingContext2D, w: number, h: number) => {
+  c.fillStyle = '#e8c21a';
+  c.fillRect(0, 0, w, h);
+  c.fillStyle = '#b8241c';
+  c.fillRect(0, h * 0.72, w, h * 0.28);
+  for (let k = 0; k < 2; k++) bigText(c, 'NESCAU', w * (0.25 + k * 0.5), h * 0.4, w * 0.4, 30, '#7a3a14', '#fff6d0');
+};
+
+/** Lata de linha: a linha (com cerol) enrolada na lata, que gira em Z. Segura pela lata, boca pra frente. */
+function pipa(): { g: THREE.Group; p: HeldParts } {
+  const g = new THREE.Group();
+  const can = new THREE.Group();
+  can.add(M(cached('pp-can', () => {
+    const b = new Builder();
+    b.cylZ(C.chrome, 0.052, 0.012, 0, 0, 0.065, 12);
+    b.cylZ(C.chrome, 0.052, 0.012, 0, 0, -0.065, 12);
+    return b.build();
+  })));
+  const lbl = wrapLabel('nescau', 0.05, 0.12, 0, canLabel);
+  lbl.rotation.x = Math.PI / 2;
+  can.add(lbl);
+  can.position.set(0, 0.05, -0.04);
+  g.add(can);
+  // linha enrolada por cima do rótulo (é o que gira)
+  const reel = new THREE.Group();
+  reel.add(M(cached('pp-reel', () => {
+    const b = new Builder();
+    b.cylZ(0xf4ecd8, 0.058, 0.07, 0, 0, 0.0, 12);
+    b.cylZ(0xe040f0, 0.0585, 0.008, 0, 0, 0.02, 12);
+    b.cylZ(0x2a9bff, 0.0585, 0.008, 0, 0, -0.012, 12);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      b.box(0xfffbe8, 0.006, 0.006, 0.06, Math.cos(a) * 0.058, Math.sin(a) * 0.058, 0, 0, 0, a);
+    }
+    return b.build();
+  })));
+  reel.position.set(0, 0.05, -0.04);
+  g.add(reel);
+  // ponta da linha saindo da lata (escala z = comprimento, apontada pela animação)
+  const line = M(cached('pp-line', () => new Builder().box(0xfff4d0, 0.004, 0.004, 1, 0, 0, -0.5).build()), 0, 0.105, -0.06);
+  line.scale.z = 0.08;
+  g.add(line);
+  return { g, p: { muzzle: anchor(g, 0, 0.11, -0.1), reel, line } };
+}
+
+/** Rodo: cabo comprido de madeira (para -Z) e cabeça com borracha preta. Origem = mão direita na ponta do cabo. */
+function rodo(): { g: THREE.Group; p: HeldParts } {
+  const g = new THREE.Group();
+  g.add(M(cached('rd', () => {
+    const b = new Builder();
+    b.cylZ(C.wood, 0.014, 0.95, 0, 0, -0.42, 7);
+    b.cylZ(C.woodDark, 0.016, 0.03, 0, 0, 0.05, 7); // ponta do cabo
+    b.cylZ(C.blue, 0.017, 0.05, 0, 0, -0.88, 7); // rosca de plástico
+    b.box(C.blue, 0.4, 0.045, 0.045, 0, 0, -0.92); // cabeça
+    b.box(C.blueDark, 0.4, 0.012, 0.047, 0, 0.026, -0.92);
+    b.box(C.black, 0.42, 0.04, 0.012, 0, -0.04, -0.92); // borracha
+    b.box(C.black, 0.42, 0.012, 0.03, 0, -0.06, -0.92);
+    return b.build();
+  })));
+  return { g, p: { muzzle: anchor(g, 0, 0, -0.92) } };
+}
+
+/** Estampa florida clássica de garrafa térmica (fundo vermelho, flores brancas e amarelas). */
+const floral = (c: CanvasRenderingContext2D, w: number, h: number) => {
+  c.fillStyle = '#c8281e';
+  c.fillRect(0, 0, w, h);
+  const flower = (x: number, y: number, r: number, petal: string, core: string) => {
+    c.fillStyle = petal;
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      c.beginPath();
+      c.arc(x + Math.cos(a) * r, y + Math.sin(a) * r, r * 0.75, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.fillStyle = core;
+    c.beginPath();
+    c.arc(x, y, r * 0.6, 0, Math.PI * 2);
+    c.fill();
+  };
+  let seed = 7;
+  const R = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+  for (let i = 0; i < 16; i++) {
+    const x = R() * w, y = R() * h, r = 5 + R() * 6;
+    c.fillStyle = '#2f8f3f';
+    c.fillRect(x + r * 0.4, y + r * 0.6, r * 1.4, r * 0.5);
+    flower(x, y, r, i % 3 === 0 ? '#ffd23a' : '#fff6ee', i % 3 === 0 ? '#c8281e' : '#ffb000');
+  }
+};
+
+/** Garrafa térmica de bico, florida. Segura pela alça (à direita); bico pra frente; botão de pressão em cima. */
+function cafe(): { g: THREE.Group; p: HeldParts } {
+  const g = new THREE.Group();
+  const body = new THREE.Group();
+  body.add(M(cached('cf', () => {
+    const b = new Builder();
+    b.cyl(0xf2ece0, 0.052, 0.025, 0, -0.105, 0, 0, 0, 0, 12); // base creme
+    b.cyl(0xf2ece0, 0.054, 0.02, 0, 0.1, 0, 0, 0, 0, 12); // anel
+    b.push(new THREE.CylinderGeometry(0.035, 0.052, 0.05, 12), 0xf2ece0, 0, 0.135, 0); // ombro
+    b.cyl(0xf2ece0, 0.036, 0.02, 0, 0.17, 0, 0, 0, 0, 12);
+    // bico comprido
+    b.push(new THREE.CylinderGeometry(0.012, 0.022, 0.08, 8), 0xf2ece0, 0, 0.165, -0.055, -1.1, 0, 0);
+    // alça
+    b.box(0xf2ece0, 0.016, 0.15, 0.03, 0.078, 0.03, 0.0);
+    b.box(0xf2ece0, 0.04, 0.02, 0.026, 0.06, 0.1, 0.0);
+    b.box(0xf2ece0, 0.04, 0.02, 0.026, 0.06, -0.04, 0.0);
+    return b.build();
+  })));
+  body.add(wrapLabel('floral', 0.0525, 0.18, 0.0, floral));
+  body.position.set(-0.075, 0, 0);
+  g.add(body);
+  // botão de pressão (a mão esquerda aperta)
+  const nozzle = new THREE.Group();
+  nozzle.add(M(cached('cf-btn', () => new Builder().cyl(0xc8281e, 0.026, 0.02, 0, 0, 0, 0, 0, 0, 10).cyl(0xf2ece0, 0.012, 0.012, 0, 0.014, 0, 0, 0, 0, 8).build())));
+  nozzle.position.set(-0.075, 0.188, 0);
+  g.add(nozzle);
+  return { g, p: { muzzle: anchor(g, -0.075, 0.19, -0.1), nozzle } };
+}
+
 const BUILDERS: Record<SpecialId, () => { g: THREE.Group; p: HeldParts }> = {
-  lorenzetti, estilingue, dolly, rexona, pombo: pigeonParts, chinelo, panela, coxinha: coxinhaGun, ventilador, tijolo,
+  lorenzetti, estilingue, dolly, rexona, pombo: pigeonParts, chinelo, panela, ventilador, tijolo, bola, pipa, rodo, cafe,
 };
 
 // ------------------------------------------------------------------ animação passiva
@@ -606,7 +689,7 @@ export function buildHeldModel(id: SpecialId): THREE.Object3D {
  * 3ª pessoa: onde a mão esquerda vai (espaço do item, em metros) e a escala do item na mão do boneco.
  * null = só a mão direita.
  */
-export const HELD_TP: Record<SpecialId, { left: [number, number, number] | null; scale: number }> = {
+export const HELD_TP: Record<SpecialId, { left: [number, number, number] | null; scale: number; rx?: number }> = {
   lorenzetti: { left: [-0.03, -0.02, 0.0], scale: 1.3 },
   estilingue: { left: [0, 0.12, 0.12], scale: 1.4 },
   dolly: { left: null, scale: 1.2 },
@@ -614,17 +697,78 @@ export const HELD_TP: Record<SpecialId, { left: [number, number, number] | null;
   pombo: { left: [-0.14, 0, 0], scale: 1.3 },
   chinelo: { left: null, scale: 1.3 },
   panela: { left: [-0.05, -0.04, -0.2], scale: 1.2 },
-  coxinha: { left: [0, 0.0, -0.2], scale: 1.2 },
   ventilador: { left: [-0.04, 0.12, -0.02], scale: 1.1 },
   tijolo: { left: null, scale: 1.3 },
+  bola: { left: [0, 0.02, -0.2], scale: 1.4 },
+  pipa: { left: [-0.02, 0.1, -0.2], scale: 1.3 },
+  rodo: { left: [0, 0, -0.12], scale: 1.0, rx: 1.25 },
+  cafe: { left: [-0.075, 0.2, 0.0], scale: 1.3 },
 };
 
 // ------------------------------------------------------------------ pickup
 
 const labels = new Map<string, THREE.CanvasTexture>();
 const PICK_SCALE: Record<SpecialId, number> = {
-  lorenzetti: 3.7, estilingue: 4.2, dolly: 2.7, rexona: 4.2, pombo: 3.2, chinelo: 3.7, panela: 2.7, coxinha: 2.4, ventilador: 2.7, tijolo: 3.5,
+  lorenzetti: 3.7, estilingue: 4.2, dolly: 2.7, rexona: 4.2, pombo: 3.2, chinelo: 3.7, panela: 2.7, ventilador: 2.7, tijolo: 3.5, bola: 3.0, pipa: 3.8, rodo: 2.0, cafe: 3.4,
 };
+
+const BEAM_H = 160;
+
+/** Cilindro aberto do chão até BEAM_H, com a base no y=0. */
+function beamGeometry(rBottom: number, rTop: number): THREE.BufferGeometry {
+  return new THREE.CylinderGeometry(rTop, rBottom, BEAM_H, 10, 1, true).translate(0, BEAM_H / 2, 0);
+}
+
+const beamMats = new Map<number, { core: THREE.ShaderMaterial; halo: THREE.ShaderMaterial }>();
+
+/** Material do feixe: aditivo, sem neblina, some suave lá em cima e pulsa subindo. Um par por cor. */
+function beamMaterial(color: number): { core: THREE.ShaderMaterial; halo: THREE.ShaderMaterial } {
+  let m = beamMats.get(color);
+  if (m) return m;
+  const make = (strength: number, edge: number) => new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(color) }, uTime: { value: 0 }, uStrength: { value: strength } },
+    vertexShader: /* glsl */ `
+      varying float vH;
+      varying vec3 vN;
+      varying vec3 vView;
+      void main() {
+        vH = position.y / ${BEAM_H.toFixed(1)};
+        // engrossa com a distância: de longe continua com alguns pixels de largura
+        vec3 base = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        float grow = max(1.0, distance(cameraPosition, base) * 0.045);
+        vec3 p = vec3(position.x * grow, position.y, position.z * grow);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        vN = normalize(normalMatrix * normal);
+        vView = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uColor;
+      uniform float uTime;
+      uniform float uStrength;
+      varying float vH;
+      varying vec3 vN;
+      varying vec3 vView;
+      void main() {
+        // mais forte no meio do cilindro visto de frente (parece um feixe "cheio")
+        float facing = pow(abs(dot(normalize(vN), normalize(vView))), ${edge.toFixed(1)});
+        float fade = (1.0 - smoothstep(0.35, 1.0, vH)) * smoothstep(0.0, 0.01, vH);
+        float pulse = 0.75 + 0.25 * sin(vH * 60.0 - uTime * 6.0);
+        float a = facing * fade * pulse * uStrength;
+        gl_FragColor = vec4(uColor * a, a);
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    fog: false,
+  });
+  m = { core: make(1.8, 1.0), halo: make(0.6, 2.0) };
+  beamMats.set(color, m);
+  return m;
+}
 
 export function buildPickupModel(id: SpecialId): THREE.Object3D {
   const d = SPECIALS[id];
@@ -651,15 +795,16 @@ export function buildPickupModel(id: SpecialId): THREE.Object3D {
   glow.scale.setScalar(1.3);
   g.add(glow);
 
-  // coluna de luz (dá pra ver de longe)
-  const col = new THREE.Mesh(
-    cached('pk-col', () => new THREE.CylinderGeometry(0.2, 0.32, 7, 10, 1, true)),
-    new THREE.MeshBasicMaterial({
-      color: d.color, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
-    }),
-  );
-  col.position.y = 3.2;
-  g.add(col);
+  // Feixe de luz até o céu, na cor da arma: dá pra ver de qualquer canto do mapa por cima dos telhados
+  const beamMat = beamMaterial(d.color);
+  const core = new THREE.Mesh(cached('pk-beam-core', () => beamGeometry(0.22, 0.3)), beamMat.core);
+  const halo = new THREE.Mesh(cached('pk-beam-halo', () => beamGeometry(0.8, 1.1)), beamMat.halo);
+  for (const m of [core, halo]) {
+    m.position.y = -0.8;
+    m.frustumCulled = false;
+    m.renderOrder = 5;
+    g.add(m);
+  }
   // anel no chão
   const ring = new THREE.Mesh(
     cached('pk-ring', () => new THREE.RingGeometry(0.42, 0.55, 20).rotateX(-Math.PI / 2)),
@@ -678,6 +823,8 @@ export function buildPickupModel(id: SpecialId): THREE.Object3D {
 
   g.userData.spin = spin;
   g.userData.update = (t: number, dt = 1 / 60) => {
+    beamMat.core.uniforms.uTime.value = t;
+    beamMat.halo.uniforms.uTime.value = t;
     glow.scale.setScalar(1.2 + Math.sin(t * 4) * 0.2);
     spin.rotation.x = Math.sin(t * 1.3) * 0.15;
     spin.position.y = Math.sin(t * 2.2) * 0.06;
@@ -719,9 +866,9 @@ export function buildProjectileModel(kind: ProjKind): THREE.Object3D {
       break;
     }
 
-    case 'coxinha': {
-      const m = M(coxinhaGeo());
-      m.scale.setScalar(1.4);
+    case 'bola': {
+      const m = M(ballGeo());
+      m.scale.setScalar(2); // modelo tem raio 0.11; a bola de jogo tem 0.22
       g.add(m);
       break;
     }
@@ -749,6 +896,53 @@ export function buildProjectileModel(kind: ProjKind): THREE.Object3D {
       break;
     }
   }
+  g.traverse((o) => { o.frustumCulled = false; });
+  return g;
+}
+
+
+/**
+ * Pipa com cerol: losango de papel de seda em 4 cores (plano XY, frente em +Z, vale dos dois lados), varetas e
+ * rabiola de plástico colorido. Origem = centro. `userData.tail` = grupo da rabiola (balança em x).
+ */
+export function buildKiteModel(): THREE.Object3D {
+  const g = new THREE.Group();
+  const tri = (a: [number, number], b: [number, number], z: number): THREE.BufferGeometry => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0.06, z, a[0], a[1], z, b[0], b[1], z], 3));
+    geo.computeVertexNormals();
+    return geo;
+  };
+  const T = 0.5, Bt = -0.52, L = -0.36, Rr = 0.36;
+  const quads: [[number, number], [number, number], number][] = [
+    [[0, T], [L, 0.06], 0xe040f0], [[Rr, 0.06], [0, T], 0xffd200], [[L, 0.06], [0, Bt], 0x2a9bff], [[0, Bt], [Rr, 0.06], 0xff3a3a],
+  ];
+  g.add(M(cached('kite-paper', () => {
+    const b = new Builder();
+    for (const [p1, p2, c] of quads) {
+      b.push(tri(p1, p2, 0.001), c);
+      b.push(tri(p2, p1, -0.001), c);
+    }
+    // bordas de linha branca
+    b.box(0xffffff, 0.01, 0.6, 0.006, -0.18, 0.28, 0, 0, 0, -0.62);
+    b.box(0xffffff, 0.01, 0.6, 0.006, 0.18, 0.28, 0, 0, 0, 0.62);
+    b.box(0xffffff, 0.01, 0.68, 0.006, -0.18, -0.23, 0, 0, 0, 0.6);
+    b.box(0xffffff, 0.01, 0.68, 0.006, 0.18, -0.23, 0, 0, 0, -0.6);
+    return b.build();
+  })));
+  g.add(M(cached('kite-sticks', () => new Builder().box(C.woodDark, 0.012, 1.02, 0.012, 0, -0.01, 0.012).box(C.woodDark, 0.74, 0.012, 0.012, 0, 0.06, 0.012).build())));
+  const tail = new THREE.Group();
+  tail.position.set(0, -0.52, 0);
+  const COLS = [0x2fe05a, 0xffd200, 0xe040f0, 0x2a9bff, 0xff3a3a];
+  for (let i = 0; i < 12; i++) {
+    const c = COLS[i % COLS.length];
+    const bit = cached('kite-bit' + c, () => new Builder().box(c, 0.11, 0.035, 0.008, 0, 0, 0).box(0xffffff, 0.006, 0.12, 0.004, 0, 0.04, 0).build());
+    const m = M(bit, Math.sin(i * 0.9) * 0.06, -0.1 - i * 0.12, 0);
+    m.rotation.z = Math.sin(i * 1.7) * 0.6;
+    tail.add(m);
+  }
+  g.add(tail);
+  g.userData.tail = tail;
   g.traverse((o) => { o.frustumCulled = false; });
   return g;
 }

@@ -42,8 +42,11 @@ export class Actor {
   alive = false;
   kills = 0;
   deaths = 0;
+  /** Nível na escada de malucas (0 = mais fraca) e dinheiro da loja (decididos pelo host, espelhados nos clientes). */
   level = 0;
-  levelKills = 0;
+  money = 0;
+  /** Pontos de colete (absorvem parte do dano). */
+  armor = 0;
   weapon: WeaponId = 'smg';
   /** Arma maluca (pickup) na mão, ou null. Munição só é precisa em quem simula (jogador local e bots no host). */
   special: SpecialId | null = null;

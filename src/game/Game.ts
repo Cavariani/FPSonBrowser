@@ -15,11 +15,14 @@ import { Renderer } from '../render/Renderer';
 import type { HudState, ScoreRow } from '../ui/types';
 import { ACTOR_COLORS, Actor, MAX_HP, botName, type ActorSnap } from './Actor';
 import { BotBrain, buildNavGraph } from './Bots';
+import { Cheats } from './Cheats';
 import { Match, RESPAWN_TIME, type DamageRequest, type MatchEvent, type V3 } from './Match';
 import { Player } from './Player';
 import { SpecialSystem } from './special/Specials';
 import { WeaponSystem } from './Weapons';
-import { anyWeaponDef, GUNGAME_LADDER, killsNeeded, WEAPONS, type WeaponDef, type WeaponId } from './weaponDefs';
+import { ARMOR_MAX, canBuy, isShopItem, LADDER, ladderWeapon, PRICE, SHOP_TIERS, START_MONEY, type ShopItemId } from './shop';
+import { isSpecialId, SPECIALS } from './special/defs';
+import { anyWeaponDef, WEAPONS, type WeaponDef, type WeaponId } from './weaponDefs';
 import { World } from './World';
 
 const TICK = 1 / 60;
@@ -42,6 +45,8 @@ export class Game {
   readonly env: Environment;
   /** Armas malucas (pickups): regras, projéteis, status e efeitos. */
   readonly sp: SpecialSystem;
+  /** Killstreaks-cheat (wallhack 3, aimbot 6, noclip 9; tecla V). */
+  readonly cheats = new Cheats(this.world);
   private nav = buildNavGraph(this.world);
 
   readonly actors = new Map<string, Actor>();
@@ -61,12 +66,16 @@ export class Game {
   private damageFlash = 0;
   private deadFade = 0;
   private killerName = '';
+  private killerFace: string | null = null;
   private fpsCount = 0;
   private fpsTime = 0;
   fps = 0;
   private lastLookDX = 0;
   private lastLookDY = 0;
   private sprintAmt = 0;
+  /** Loja (tecla B): aberta e página atual (-1 = menu de categorias). */
+  shopOpen = false;
+  shopPage = -1;
   /** Corrida ligada (Shift é toggle). */
   private sprintOn = false;
   private speedFov = 0;
@@ -122,6 +131,8 @@ export class Game {
     this.local = null;
     this.inSession = false;
     this.sp.reset();
+    this.cheats.reset();
+    this.player.setNoclip(false);
   }
 
   /** Host: aplica um evento de partida localmente e manda para os clientes. */
@@ -134,7 +145,7 @@ export class Game {
     return !this.net || this.net.isHost;
   }
 
-  /** Modo da partida: o do host (clientes recebem pela rede). */
+  /** Modo da partida: o do host (clientes recebem pela rede). 'gungame' é o modo da loja (id antigo). */
   get mode(): 'gungame' | 'treino' {
     return this.net && !this.net.isHost ? this.net.mode : settings.mode;
   }
@@ -278,26 +289,54 @@ export class Game {
           this.weapons.holster(); // sai da luneta/mira, cancela recarga
           this.jumpQueued = false;
           this.killerName = k?.name ?? '';
+          this.killerFace = k && k !== v ? k.face : null;
           bus.emit('player:death', { killer: this.killerName, weapon: e.weapon as WeaponId });
         } else {
           v.model?.die(dir, e.headshot);
         }
         break;
       }
+      case 'money': {
+        const a = this.actors.get(e.id);
+        if (!a) return;
+        const delta = e.money - a.money;
+        a.money = e.money;
+        if (a.isLocal && delta > 0) bus.emit('shop:money', { delta });
+        break;
+      }
       case 'level': {
         const a = this.actors.get(e.id);
         if (!a) return;
         const up = e.level > a.level;
-        const changed = e.level !== a.level;
         a.level = e.level;
-        a.levelKills = e.levelKills;
-        if (this.mode === 'gungame') {
-          a.weapon = GUNGAME_LADDER[Math.min(e.level, GUNGAME_LADDER.length - 1)];
+        // com a maluca da escada na mão, troca pela do novo nível (comum comprada fica até morrer)
+        if (a.alive && a.special && this.mode === 'gungame') {
+          const kind = ladderWeapon(e.level);
+          this.sp.onEvent({ t: 'special', actor: a.id, kind, ammo: SPECIALS[kind].ammo });
         }
-        if (a.isLocal && changed) {
-          if (!a.special) this.weapons.equip(a.weapon); // com arma maluca na mão, só troca quando ela acabar
-          bus.emit('gungame:level', { level: e.level, total: GUNGAME_LADDER.length, weapon: a.weapon, up });
+        if (a.isLocal && up) bus.emit('ladder:level', { level: e.level, total: LADDER.length, weapon: ladderWeapon(e.level) });
+        break;
+      }
+      case 'armor': {
+        const a = this.actors.get(e.id);
+        if (a) a.armor = e.armor;
+        break;
+      }
+      case 'buy': {
+        const a = this.actors.get(e.id);
+        if (!a) return;
+        a.money = e.money;
+        if (e.item === 'colete') a.armor = ARMOR_MAX;
+        else if (e.item === 'vida') a.hp = MAX_HP;
+        else if (e.item === 'municao') {
+          if (a.special) this.sp.onEvent({ t: 'special', actor: a.id, kind: a.special, ammo: SPECIALS[a.special].ammo });
+          else if (a.isLocal) this.weapons.reset();
+        } else {
+          a.weapon = e.item;
+          if (a.special) this.sp.onEvent({ t: 'special-end', actor: a.id }); // largar a maluca já equipa a.weapon (local)
+          else if (a.isLocal) this.weapons.equip(a.weapon, false, true);
         }
+        bus.emit('shop:buy', { item: e.item, actorId: a.id, local: a.isLocal });
         break;
       }
       case 'spawn': {
@@ -308,6 +347,7 @@ export class Game {
         a.yaw = e.yaw;
         a.pitch = 0;
         a.hp = MAX_HP;
+        a.armor = 0;
         a.alive = true;
         a.weapon = e.weapon;
         a.snaps.length = 0;
@@ -331,7 +371,7 @@ export class Game {
         break;
       }
       case 'start':
-        for (const a of this.actors.values()) { a.kills = 0; a.deaths = 0; }
+        for (const a of this.actors.values()) { a.kills = 0; a.deaths = 0; a.level = 0; a.armor = 0; a.money = START_MONEY; }
         bus.emit('match:start', {});
         break;
     }
@@ -476,6 +516,17 @@ export class Game {
     if (playing && local.alive && !this.sp.status.has(local.id, 'stun')) this.handleLook();
     else { this.lastLookDX = 0; this.lastLookDY = 0; }
 
+    // Cheats de killstreak: V ativa o melhor guardado; timers; aimbot mexe na mira; noclip liga/desliga no Player
+    const cheating = !!playing && local.alive;
+    if (cheating && inp.pressed('KeyV')) this.cheats.activate();
+    this.cheats.update(dt);
+    if (cheating && !this.sp.status.has(local.id, 'stun')) {
+      this.cheats.aimbot(dt, this.player, this.actors.values(), this.weapons.recoilYaw, this.weapons.recoilPitch);
+    }
+    this.player.setNoclip(this.cheats.noclipWanted && !!local?.alive);
+
+    this.handleShopKeys(!!playing && local.alive);
+
     if (playing && inp.pressed('Space')) this.jumpQueued = true;
 
     // Corrida em toggle (estilo CoD): Shift liga/desliga; para ao soltar o W, atirar, mirar ou agachar
@@ -513,6 +564,8 @@ export class Game {
         this.sp.controlLocal(dt, {
           held: !!playing && inp.mouseDown(0) && !this.player.sprinting,
           pressed: !!playing && inp.mousePressed(0) && !this.player.sprinting,
+          alt: !!playing && inp.mouseDown(2),
+          altPressed: !!playing && inp.mousePressed(2) && !this.player.sprinting,
         });
       } else {
         this.weapons.update(
@@ -536,6 +589,7 @@ export class Game {
     this.updateRemoteActors(dt);
     this.sp.frame(dt, alpha);
     this.updateCamera(dt, alpha);
+    this.cheats.project(this.camera, this.actors.values()); // ESP do wallhack (retângulos já projetados)
     this.net?.update(dt);
 
     this.effects.update(dt);
@@ -570,6 +624,50 @@ export class Game {
     inp.endFrame();
   }
 
+  /** Loja: B abre/fecha; 1-2 escolhe a categoria; 1-6 compra; Backspace volta. Não solta o mouse. */
+  private handleShopKeys(can: boolean): void {
+    const inp = this.input;
+    if (!can || this.mode !== 'gungame') { this.shopOpen = false; this.shopPage = -1; return; }
+    if (inp.pressed('KeyB')) {
+      this.shopOpen = !this.shopOpen;
+      this.shopPage = -1;
+      return;
+    }
+    if (!this.shopOpen) return;
+    if (inp.pressed('Backspace')) {
+      if (this.shopPage >= 0) this.shopPage = -1;
+      else this.shopOpen = false;
+      return;
+    }
+    for (let i = 0; i < 6; i++) {
+      if (!inp.pressed(`Digit${i + 1}`)) continue;
+      if (this.shopPage < 0) {
+        if (i < SHOP_TIERS.length) this.shopPage = i;
+      } else {
+        const item = SHOP_TIERS[this.shopPage].items[i];
+        if (item && this.buy(item)) { this.shopOpen = false; this.shopPage = -1; }
+      }
+    }
+  }
+
+  /** Jogador local pede para comprar. Retorna false (e avisa, se faltou dinheiro) quando não compra. */
+  buy(item: ShopItemId): boolean {
+    const me = this.local;
+    if (!me || !isShopItem(item)) return false;
+    const can = canBuy(me, item);
+    if (can === 'money') bus.emit('shop:deny', { item, missing: PRICE[item] - me.money });
+    if (can !== 'ok') return false;
+    if (this.isHost) this.match?.buy(me, item);
+    else this.net?.requestBuy(item);
+    return true;
+  }
+
+  /** Host: um cliente pediu para comprar. */
+  hostBuy(actorId: string, item: unknown): void {
+    const a = this.actors.get(actorId);
+    if (a) this.match?.buy(a, item);
+  }
+
   private handleLook(): void {
     const inp = this.input;
     // Sensibilidade proporcional ao zoom atual (mira/luneta)
@@ -599,6 +697,8 @@ export class Game {
         jump: this.jumpQueued || !!k('Space'),
         crouch: !!k('ControlLeft') || !!k('KeyC'),
         sprint: this.sprintOn,
+        flyUp: k('Space') - (k('ControlLeft') || k('KeyC')),
+        flyFast: !!k('ShiftLeft') || !!k('ShiftRight'),
         speedMult: (local.special ? 1 : this.weapons.def.moveMult * (1 - 0.3 * this.weapons.ads)) * (this.sp.status.has(local.id, 'stun') ? 0.7 : 1),
       });
       this.jumpQueued = false;
@@ -615,8 +715,10 @@ export class Game {
         world: this.world,
         actors: () => this.actors.values(),
         difficulty: () => settings.botDifficulty,
-        special: (a: Actor, d: number, held: boolean, pressed: boolean, dir: THREE.Vector3) =>
-          this.sp.controlBot(a, d, { held, pressed }, dir),
+        special: (a: Actor, d: number, held: boolean, pressed: boolean, dir: THREE.Vector3, altPressed = false) =>
+          this.sp.controlBot(a, d, { held, pressed, altPressed }, dir),
+        specialOn: (a: Actor) => this.sp.isOn(a),
+        knocked: (a: Actor) => !!this.sp.status.pushOf(a.id),
         stunned: (a: Actor) => this.sp.status.has(a.id, 'stun'),
         blinded: (a: Actor) => this.sp.status.has(a.id, 'blind'),
         pickupNear: (a: Actor) => (a.special ? null : this.sp.pickups.nearest(a.pos.x, a.pos.z, 45)),
@@ -722,7 +824,7 @@ export class Game {
     const w = this.weapons;
     const rows: ScoreRow[] = [...this.actors.values()]
       .map((a) => ({
-        id: a.id, name: a.name, kills: a.kills, deaths: a.deaths, level: a.level, ping: a.ping,
+        id: a.id, name: a.name, kills: a.kills, deaths: a.deaths, level: a.level, money: a.money, weapon: a.special ?? a.weapon, ping: a.ping,
         isLocal: a.isLocal, isBot: a.isBot, alive: a.alive, color: a.color,
       }))
       .sort((a, b) => b.level - a.level || b.kills - a.kills || a.deaths - b.deaths);
@@ -741,13 +843,15 @@ export class Game {
       fov: this.camera.fov,
       zoomed: !sph.special && w.zoomed && !!w.def.zoomFov,
       mode: this.mode,
+      money: local?.money ?? 0,
+      armor: local?.armor ?? 0,
       level: local?.level ?? 0,
-      levelKills: local?.levelKills ?? 0,
-      killsNeeded: killsNeeded(local?.level ?? 0),
-      ladder: GUNGAME_LADDER,
+      ladder: LADDER,
+      shop: { open: this.shopOpen, page: this.shopPage, held: local ? (local.special ?? local.weapon) : '' },
       dead: !!local && !local.alive,
       respawnIn: local && !local.alive ? Math.max(0, local.respawnAt - this.time) : 0,
       killerName: this.killerName,
+      killerFace: this.killerFace,
       showScoreboard: this.input.down('Tab'),
       scoreboard: rows,
       leader: leaderRow ? { name: leaderRow.name, level: leaderRow.level, isLocal: leaderRow.isLocal } : null,
@@ -764,10 +868,12 @@ export class Game {
       special: sph.special,
       charge: sph.charge,
       blind: sph.blind,
+      steam: sph.steam,
       burning: sph.burning,
       stunned: sph.stunned,
       shocked: sph.shocked,
       pickups: sph.pickups,
+      cheats: this.cheats.hud(),
     };
   }
 }

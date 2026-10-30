@@ -1,12 +1,15 @@
 import { MAX_HP } from '../game/Actor';
 import './hud.css';
 import { bus } from '../core/events';
-import { WEAPONS } from '../game/weaponDefs';
-import type { WeaponId } from '../game/weaponDefs';
-import { SPECIALS, isSpecialId } from '../game/special/defs';
+import { SPECIALS } from '../game/special/defs';
 import type { SpecialId } from '../game/special/defs';
+import type { WeaponId } from '../game/weaponDefs';
 import type { HudState, ScoreRow } from './types';
+import { CheatsHud } from './CheatsHud';
+import { hex, icon, wInfo } from './icons';
+import { shopName } from './ShopHud';
 import { Minimap } from './Minimap';
+import { ShopHud } from './ShopHud';
 import { ScorePopup } from './ScorePopup';
 
 /* ------------------------------------------------------------------ util */
@@ -17,38 +20,6 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: s
   if (text !== undefined) e.textContent = text;
   return e;
 }
-
-/** Silhuetas pixeladas simples (viewBox 24x10). */
-const ICONS: Record<WeaponId | SpecialId, string> = {
-  smg: '<rect x="0" y="3" width="4" height="3"/><rect x="4" y="2" width="14" height="4"/><rect x="18" y="3" width="6" height="2"/><rect x="8" y="6" width="3" height="4"/><rect x="14" y="6" width="2" height="3"/>',
-  rifle: '<rect x="0" y="3" width="6" height="4"/><rect x="6" y="3" width="12" height="3"/><rect x="18" y="4" width="6" height="1"/><rect x="9" y="6" width="3" height="4"/><rect x="8" y="1" width="6" height="2"/>',
-  shotgun: '<rect x="0" y="3" width="8" height="4"/><rect x="8" y="3" width="16" height="2"/><rect x="11" y="5" width="6" height="2"/><rect x="8" y="5" width="2" height="3"/>',
-  sniper: '<rect x="0" y="3" width="8" height="4"/><rect x="8" y="4" width="16" height="1"/><rect x="9" y="1" width="7" height="2"/><rect x="6" y="7" width="2" height="3"/>',
-  pistol: '<rect x="5" y="2" width="14" height="3"/><rect x="5" y="5" width="4" height="5"/><rect x="9" y="5" width="3" height="2"/>',
-  knife: '<rect x="2" y="6" width="20" height="3"/><rect x="3" y="3" width="16" height="3"/><rect x="19" y="4" width="3" height="2"/><rect x="1" y="4" width="2" height="5"/>',
-  // armas malucas
-  lorenzetti: '<rect x="0" y="5" width="9" height="2"/><rect x="8" y="3" width="3" height="4"/><path d="M11 2h11l2 6H9z"/><rect x="13" y="9" width="1" height="1"/><rect x="17" y="9" width="1" height="1"/><rect x="21" y="9" width="1" height="1"/>',
-  estilingue: '<path d="M6 0h3l3 5 3-5h3l-5 8v2h-2V8z"/>',
-  dolly: '<rect x="1" y="2" width="13" height="6"/><rect x="14" y="3" width="6" height="4"/><rect x="20" y="2" width="3" height="6"/>',
-  rexona: '<rect x="1" y="2" width="14" height="6"/><rect x="15" y="3" width="3" height="4"/><rect x="20" y="4" width="2" height="2"/><rect x="22" y="1" width="1" height="2"/><rect x="22" y="7" width="1" height="2"/>',
-  pombo: '<path d="M2 6l8-3h6l4-3-1 5 4 1-6 3-8 1z"/>',
-  chinelo: '<ellipse cx="12" cy="5" rx="11" ry="4"/><path d="M11 0h2l-1 5z" fill="#000" fill-opacity=".55"/>',
-  panela: '<rect x="0" y="4" width="4" height="2"/><rect x="20" y="4" width="4" height="2"/><rect x="4" y="3" width="16" height="6"/><rect x="3" y="2" width="18" height="2"/><rect x="11" y="0" width="2" height="2"/>',
-  coxinha: '<path d="M12 0l9 8q-9 3-18 0z"/>',
-  ventilador: '<circle cx="8" cy="5" r="4.5"/><rect x="7" y="9" width="2" height="1"/><rect x="15" y="3" width="8" height="1"/><rect x="15" y="6" width="6" height="1"/>',
-  tijolo: '<rect x="1" y="2" width="22" height="6"/><rect x="8" y="2" width="1" height="3" fill="#000" fill-opacity=".45"/><rect x="16" y="5" width="1" height="3" fill="#000" fill-opacity=".45"/><rect x="1" y="5" width="22" height="1" fill="#000" fill-opacity=".45"/>',
-};
-const icon = (id: WeaponId | SpecialId) => `<svg viewBox="0 0 24 10" aria-hidden="true">${ICONS[id]}</svg>`;
-
-/** Nome/abreviação/cor de qualquer arma (do gun game ou maluca). */
-function wInfo(id: string): { name: string; short: string; color: number | null } {
-  if (isSpecialId(id)) { const d = SPECIALS[id]; return { name: d.name, short: d.short, color: d.color }; }
-  const w = WEAPONS[id as WeaponId];
-  return { name: w?.name ?? id, short: w?.short ?? id, color: null };
-}
-
-
-const hex = (n: number) => '#' + (n & 0xffffff).toString(16).padStart(6, '0');
 
 interface DmgInd { el: HTMLDivElement; dx: number; dz: number; born: number; angle: number }
 
@@ -77,22 +48,27 @@ export class HUD {
   private hpBox!: HTMLElement; private hpNum!: HTMLElement; private hpBar!: HTMLElement;
   private ammoBox!: HTMLElement; private wName!: HTMLElement; private ammoCur!: HTMLElement; private ammoMag!: HTMLElement; private relBar!: HTMLElement;
   private feed!: HTMLDivElement;
+  private golacoEl!: HTMLDivElement;
   private msgs!: HTMLDivElement;
   private death!: HTMLElement; private deathBy!: HTMLElement; private deathCd!: HTMLElement;
+  private deathFace!: HTMLImageElement;
   private endb!: HTMLDivElement; private endH!: HTMLElement; private endP!: HTMLElement;
-  private ladderEl!: HTMLElement; private slots: HTMLElement[] = []; private pips!: HTMLElement; private leaderEl!: HTMLElement;
+  private cashEl!: HTMLElement; private goalEl!: HTMLElement; private leaderEl!: HTMLElement;
+  private shop!: ShopHud;
+  private armEl!: HTMLElement;
   private fpsEl!: HTMLElement;
   private chargeEl!: HTMLElement; private chargeBar!: HTMLElement;
   private spHint!: HTMLElement; private spPips!: HTMLElement; private spBar!: HTMLElement; private spTag!: HTMLElement;
   private hintAnim: Animation | null = null;
   private minimap!: Minimap;
+  private cheats!: CheatsHud;
   private adsOn = false;
   private sbBody!: HTMLTableSectionElement; private sbDate!: HTMLElement;
 
   // cache
   private p = {
-    hp: -1, wid: '' as string, ammo: -2, mag: -2, rel: false, relP: -1, sw: false, mode: '' as string, lvl: -1, lk: -1, kn: -1,
-    leader: '\0', sid: '' as string, sammo: -1, charge: -1, dead: false, cd: '', fps: -1, sb: '', sbShow: false, zoomed: false, lowAmmo: false,
+    hp: -1, wid: '' as string, ammo: -2, mag: -2, rel: false, relP: -1, sw: false, mode: '' as string, cash: -1, goal: '', armor: -1,
+    leader: '\0', sid: '' as string, sact: false, sammo: -1, charge: -1, dead: false, cd: '', fps: -1, sb: '', sbShow: false, zoomed: false, lowAmmo: false,
   };
   private feedRows: { el: HTMLElement; die: number }[] = [];
   private score!: ScorePopup;
@@ -129,15 +105,15 @@ export class HUD {
       <div class="dmg-wrap"></div>
       <div class="fps">-- fps</div>
       <div class="top">
-        <div class="box ladder"></div>
-        <div class="pips"></div>
+        <div class="box money"><b class="cash">$0</b><span class="goal"></span><span class="key">[B] LOJA</span></div>
         <div class="leader"></div>
         <div class="sptag"></div>
         <div class="training">MODO TREINO: 1-6 troca arma</div>
       </div>
       <div class="feed"></div>
       <div class="msgs"></div>
-      <div class="box hp"><span class="lbl">VIDA</span><div class="row"><div class="ico">${SVG_HEART}</div><div class="num">${MAX_HP}</div></div><div class="bar"><b></b></div></div>
+      <div class="golaco"></div>
+      <div class="box hp"><span class="lbl">VIDA <b class="arm"></b></span><div class="row"><div class="ico">${SVG_HEART}</div><div class="num">${MAX_HP}</div></div><div class="bar"><b></b></div></div>
       <div class="sphint"></div>
       <div class="box ammo">
         <span class="lbl">MUNIÇÃO</span>
@@ -150,27 +126,31 @@ export class HUD {
         <div class="bar"><b></b></div>
       </div>
       <div class="death"><div class="letter">
-        <h2>VOCÊ MORREU</h2><div class="by"></div>
+        <h2>VOCÊ MORREU</h2><img class="kface" alt="" style="display:none"><div class="by"></div>
         <div class="cd">Renascendo em <b>0.0</b>s</div></div></div>
       <div class="endb"><h1></h1><p></p></div>
       <div class="sb"><div class="paper">
         <h3>PLACAR</h3><div class="sub"></div>
-        <table><thead><tr><th>JOGADOR</th><th>ARMA</th><th>NÍVEL</th><th>ABATES</th><th>MORTES</th><th>PING</th></tr></thead><tbody></tbody></table>
+        <table><thead><tr><th>JOGADOR</th><th>ARMA</th><th>NÍVEL</th><th>$</th><th>ABATES</th><th>MORTES</th><th>PING</th></tr></thead><tbody></tbody></table>
       </div></div>`;
     const q = <T extends HTMLElement>(s: string) => r.querySelector(s) as T;
     this.xT = q('.xhair .t'); this.xB = q('.xhair .b'); this.xL = q('.xhair .l'); this.xR = q('.xhair .r');
     this.hitm = q('.hitm'); this.dmgWrap = q('.dmg-wrap');
     this.hpBox = q('.hp'); this.hpNum = q('.hp .num'); this.hpBar = q('.hp .bar b');
     this.ammoBox = q('.ammo'); this.wName = q('.ammo .wname'); this.ammoCur = q('.ammo .cur'); this.ammoMag = q('.ammo .mag'); this.relBar = q('.ammo .bar b');
-    this.feed = q('.feed'); this.msgs = q('.msgs');
+    this.feed = q('.feed'); this.msgs = q('.msgs'); this.golacoEl = q('.golaco');
     this.death = q('.death'); this.deathBy = q('.death .by'); this.deathCd = q('.death .cd b');
+    this.deathFace = q('.death .kface') as HTMLImageElement;
     this.endb = q('.endb'); this.endH = q('.endb h1'); this.endP = q('.endb p');
-    this.ladderEl = q('.ladder'); this.pips = q('.pips'); this.leaderEl = q('.leader');
+    this.armEl = q('.hp .arm');
+    this.cashEl = q('.money .cash'); this.goalEl = q('.money .goal'); this.leaderEl = q('.leader');
     this.chargeEl = q('.charge'); this.chargeBar = q('.charge b');
     this.spHint = q('.sphint'); this.spPips = q('.sppips'); this.spBar = q('.spbar b'); this.spTag = q('.sptag');
     this.fpsEl = q('.fps'); this.sbBody = q('.sb tbody'); this.sbDate = q('.sb .sub');
     this.dmgWrap.style.setProperty('--R', 'min(24vmin, 230px)');
     this.minimap = new Minimap(r);
+    this.cheats = new CheatsHud(r);
+    this.shop = new ShopHud(r);
     this.score = new ScorePopup(r);
   }
 
@@ -192,10 +172,12 @@ export class HUD {
       this.addDamageInd(e.fromDir.x, e.fromDir.z);
     });
     bus.on('kill', (e) => this.onKill(e));
-    bus.on('gungame:level', (e) => {
-      if (e.up) this.msg(`NÍVEL ${e.level + 1}/${e.total} → ${WEAPONS[e.weapon].name}`, 'up');
-      else this.msg(`PERDEU UM NÍVEL (${WEAPONS[e.weapon].name.toLowerCase()})`, 'down');
+    bus.on('shop:buy', (e) => {
+      if (e.local) this.msg(`${shopName(e.item).toUpperCase()}!`, 'up');
     });
+    bus.on('ladder:level', (e) => this.msg(`NÍVEL ${e.level + 1}/${e.total} → ${wInfo(e.weapon).name.toUpperCase()}`, 'up', undefined, wInfo(e.weapon).color !== null ? hex(wInfo(e.weapon).color!) : undefined));
+    bus.on('shop:money', (e) => this.msg(`+$${e.delta}`, 'up', undefined, '#7dff8a'));
+    bus.on('shop:deny', (e) => this.msg('SEM GRANA', 'down', `faltam $${e.missing}`));
     bus.on('match:end', (e) => {
       this.endb.classList.toggle('me', e.winnerIsLocal);
       this.endH.textContent = e.winnerIsLocal ? 'VITÓRIA' : `${e.winner.toUpperCase()} VENCEU`;
@@ -210,7 +192,13 @@ export class HUD {
     bus.on('special:pickup', (e) => {
       if (!e.local) return;
       const d = SPECIALS[e.kind];
-      this.msg(`${d.name.toUpperCase()}!`, 'sp', undefined, hex(d.color));
+      this.msg(`${d.name.toUpperCase()}!`, 'spk', undefined, hex(d.color));
+    });
+    bus.on('special:golaco', (e) => {
+      const localId = (window as any).game?.local?.id ?? 'local';
+      const kmh = Math.round((e.speed || 0) * 3.6);
+      if (e.local) this.golaco('GOLAÇO!', kmh ? `${kmh} km/h` : '', true);
+      else if (e.victimId === localId) this.golaco('TOMOU UM GOLAÇO', kmh ? `${kmh} km/h na cabeça` : '', false);
     });
     bus.on('player:death', () => { this.streak = 0; });
     bus.on('player:respawn', () => { this.msgs.textContent = ''; });
@@ -281,13 +269,60 @@ export class HUD {
     }
   }
 
+  /** Banner gigante de gol: rotação/escala exageradas, raios e confete. */
+  private golaco(text: string, sub: string, mine: boolean): void {
+    const el = this.golacoEl;
+    el.textContent = '';
+    el.className = 'golaco ' + (mine ? 'mine' : 'victim');
+    el.append(h('div', 'rays'), h('div', 'gtxt', text));
+    if (sub) el.append(h('div', 'gsub', sub));
+    const txt = el.querySelector('.gtxt') as HTMLElement;
+    txt.animate(
+      [
+        { transform: 'scale(0.1) rotate(-25deg)', opacity: 0 },
+        { transform: 'scale(1.7) rotate(6deg)', opacity: 1, offset: 0.14 },
+        { transform: 'scale(0.9) rotate(-3deg)', offset: 0.26 },
+        { transform: 'scale(1.12) rotate(2deg)', offset: 0.4 },
+        { transform: 'scale(1) rotate(-1deg)', offset: 0.55 },
+        { transform: 'scale(1.06) rotate(1deg)', opacity: 1, offset: 0.85 },
+        { transform: 'scale(1.5) rotate(0deg)', opacity: 0 },
+      ],
+      { duration: mine ? 2600 : 2200, easing: 'ease-out' },
+    );
+    const rays = el.querySelector('.rays') as HTMLElement;
+    rays.animate(
+      [{ transform: 'rotate(0deg) scale(0.3)', opacity: 0 }, { opacity: 0.9, offset: 0.15 }, { opacity: 0.8, offset: 0.8 }, { transform: 'rotate(120deg) scale(1.2)', opacity: 0 }],
+      { duration: 2600, easing: 'linear' },
+    );
+    if (mine) {
+      for (let i = 0; i < 26; i++) {
+        const c = h('i', 'conf');
+        c.style.background = i % 2 ? '#2fd45a' : '#ffd23f';
+        el.appendChild(c);
+        const a = Math.random() * Math.PI * 2, d = 140 + Math.random() * 260;
+        const x = Math.cos(a) * d, y = Math.sin(a) * d * 0.7;
+        c.animate(
+          [
+            { transform: 'translate(0,0) rotate(0deg) scale(1)', opacity: 1 },
+            { transform: `translate(${x}px,${y}px) rotate(${Math.random() * 720 - 360}deg) scale(1)`, opacity: 1, offset: 0.6 },
+            { transform: `translate(${x * 1.05}px,${y + 90}px) rotate(${Math.random() * 720}deg) scale(.6)`, opacity: 0 },
+          ],
+          { duration: 1500 + Math.random() * 800, easing: 'cubic-bezier(.1,.7,.3,1)', delay: Math.random() * 150 },
+        );
+      }
+    }
+    clearTimeout(this.golacoT);
+    this.golacoT = window.setTimeout(() => { el.className = 'golaco'; el.textContent = ''; }, 2800);
+  }
+  private golacoT = 0;
+
   private msg(text: string, kind: string, sub?: string, color?: string): void {
     while (this.msgs.children.length >= 3) this.msgs.firstElementChild!.remove();
     const m = h('div', `msg ${kind}`, text);
     if (color) m.style.color = color;
     if (sub) m.append(h('small', '', sub));
     this.msgs.appendChild(m);
-    const long = kind === 'up' || kind === 'down' || kind === 'sp';
+    const long = kind === 'up' || kind === 'down' || kind === 'spk';
     const dur = long ? 2400 : 1500;
     const a = m.animate(
       [
@@ -393,6 +428,7 @@ export class HUD {
     const ads = !melee && s.ads > 0.5;
     if (ads !== this.adsOn) { this.adsOn = ads; root.classList.toggle('ads', ads); }
     this.minimap.update(s, this.nowMs);
+    this.cheats.update(s.cheats);
 
     // mira dinâmica
     if (!melee && !s.zoomed && !s.dead) {
@@ -409,7 +445,8 @@ export class HUD {
     }
 
     // gun game
-    this.updateLadder(s);
+    this.updateMoney(s);
+    this.shop.update(s.shop, s.money);
 
     // morte
     if (s.dead !== p.dead) {
@@ -417,6 +454,14 @@ export class HUD {
       root.classList.toggle('dead', s.dead);
       if (s.dead) {
         this.deathBy.textContent = s.killerName ? `morto por ${s.killerName}` : '';
+        // Foto de quem te matou (se ele subiu uma)
+        if (s.killerFace) {
+          this.deathFace.src = s.killerFace;
+          this.deathFace.style.display = '';
+        } else {
+          this.deathFace.removeAttribute('src');
+          this.deathFace.style.display = 'none';
+        }
         p.cd = '';
       }
     }
@@ -481,6 +526,8 @@ export class HUD {
         this.spHint.style.opacity = '0';
       }
     }
+    const act = !!sp && sp.active;
+    if (act !== p.sact) { p.sact = act; this.ammoBox.classList.toggle('active', act); }
     if (sp) {
       if (sp.ammo !== p.sammo) {
         p.sammo = sp.ammo;
@@ -516,36 +563,15 @@ export class HUD {
     }
   }
 
-  private updateLadder(s: HudState): void {
+  private updateMoney(s: HudState): void {
     const p = this.p;
     if (s.mode === 'treino') return;
-    // monta slots uma vez (ou se a escada mudar)
-    if (this.slots.length !== s.ladder.length) {
-      this.ladderEl.textContent = '';
-      this.slots = s.ladder.map((id, i) => {
-        const el = h('div', 'slot');
-        el.innerHTML = `<span class="n">${i + 1}</span>${icon(id)}<span class="nm">${WEAPONS[id].short.slice(0, 7)}</span>`;
-        el.title = WEAPONS[id].name;
-        this.ladderEl.appendChild(el);
-        return el;
-      });
-      p.lvl = -1;
-    }
-    if (s.level !== p.lvl) {
-      p.lvl = s.level;
-      this.slots.forEach((el, i) => {
-        el.classList.toggle('done', i < s.level);
-        el.classList.toggle('cur', i === s.level);
-      });
-      p.lk = -1;
-    }
-    if (s.levelKills !== p.lk || s.killsNeeded !== p.kn) {
-      p.lk = s.levelKills; p.kn = s.killsNeeded;
-      this.pips.textContent = '';
-      for (let i = 0; i < s.killsNeeded; i++) this.pips.append(h('i', i < s.levelKills ? 'on' : ''));
-      const t = h('span', '', ` ${s.levelKills}/${s.killsNeeded} abates`);
-      this.pips.append(t);
-    }
+    if (s.money !== p.cash) { p.cash = s.money; this.cashEl.textContent = '$' + s.money; }
+    const last = s.ladder.length - 1;
+    const next = s.level < last ? ` → ${wInfo(s.ladder[s.level + 1]).short}` : ' · ÚLTIMA!';
+    const goal = `NÍVEL ${s.level + 1}/${s.ladder.length}${next}`;
+    if (s.armor !== p.armor) { p.armor = s.armor; this.armEl.textContent = s.armor > 0 ? `COLETE ${Math.ceil(s.armor)}` : ''; }
+    if (goal !== p.goal) { p.goal = goal; this.goalEl.textContent = goal; }
     const lk = s.leader ? `${s.leader.name}|${s.leader.level}|${s.leader.isLocal}` : '';
     if (lk !== p.leader) {
       p.leader = lk;
@@ -555,10 +581,10 @@ export class HUD {
   }
 
   private updateScoreboard(s: HudState): void {
-    const sig = s.scoreboard.map((r) => `${r.id}|${r.name}|${r.level}|${r.kills}|${r.deaths}|${r.ping}|${r.alive ? 1 : 0}`).join(';');
+    const sig = s.scoreboard.map((r) => `${r.id}|${r.name}|${r.weapon}|${r.level}|${r.money}|${r.kills}|${r.deaths}|${r.ping}|${r.alive ? 1 : 0}`).join(';');
     if (sig === this.p.sb) return;
     this.p.sb = sig;
-    this.sbDate.textContent = s.mode === 'gungame' ? 'Gun Game' : 'Treino';
+    this.sbDate.textContent = s.mode === 'gungame' ? `Escada de ${s.ladder.length} armas + loja` : 'Treino';
     const body = this.sbBody;
     body.textContent = '';
     for (const r of s.scoreboard as ScoreRow[]) {
@@ -569,11 +595,11 @@ export class HUD {
       const sw = h('span', 'sw'); sw.style.background = hex(r.color);
       nm.append(sw, document.createTextNode(r.name));
       if (r.isBot) nm.append(h('span', 'bot', '[BOT]'));
-      const wid = s.ladder[Math.min(r.level, s.ladder.length - 1)];
       tr.append(
         nm,
-        h('td', 'wp', wid ? WEAPONS[wid].short : '-'),
+        h('td', 'wp', wInfo(r.weapon).short),
         h('td', '', String(r.level + 1)),
+        h('td', '', '$' + r.money),
         h('td', '', String(r.kills)),
         h('td', '', String(r.deaths)),
         h('td', '', r.isBot || r.isLocal && r.ping <= 0 ? '—' : `${Math.round(r.ping)}ms`),

@@ -1,0 +1,17 @@
+/* Loja (tecla B): painel à esquerda, não bloqueia o jogo. */
+.hud .shop { position: absolute; left: 1.2em; top: 50%; transform: translateY(-50%); display: none; min-width: 19em; padding: 0.6em 0.7em; background: #0b0e16e6; border: 2px solid #3a4258; color: #cdd4e6; font-size: 1em; text-shadow: 1px 1px 0 #000; box-shadow: 4px 4px 0 #000a; }
+.hud .shop.on { display: block; }
+.hud .shop .hd { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; padding-bottom: 0.4em; margin-bottom: 0.35em; border-bottom: 2px solid #3a4258; font: 1.05em var(--f-pix); color: var(--yellow); }
+.hud .shop .hd b { color: #7dff8a; }
+.hud .shop .row { display: flex; align-items: center; gap: 0.6em; padding: 0.3em 0.4em; border-left: 3px solid var(--c, #3a4258); }
+.hud .shop .row + .row { margin-top: 0.15em; }
+.hud .shop kbd { min-width: 1.5em; text-align: center; padding: 0.05em 0.3em; background: #1b2132; border: 2px solid #4a5472; font: 0.9em var(--f-pix); color: #fff; }
+.hud .shop .ic svg { display: block; width: 2.2em; height: 0.92em; fill: var(--c, currentColor); shape-rendering: crispEdges; }
+.hud .shop .nm { flex: 1; white-space: nowrap; }
+.hud .shop .pr { font: 0.85em var(--f-pix); color: #7dff8a; white-space: nowrap; }
+.hud .shop .row.poor { opacity: 0.45; }
+.hud .shop .row.poor .pr { color: #ff6a5a; }
+.hud .shop .row.held { background: #ffffff14; }
+.hud .shop .row.held .pr { color: var(--yellow); }
+.hud .shop .ft { margin-top: 0.5em; font-size: 0.75em; opacity: 0.6; }
+.hud.treino .shop { display: none; }

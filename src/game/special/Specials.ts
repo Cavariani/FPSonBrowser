@@ -6,7 +6,7 @@ import type { Actor } from '../Actor';
 import type { Game } from '../Game';
 import type { DamageRequest, MatchEvent, V3 } from '../Match';
 import { aimDir } from '../Weapons';
-import { SPECIALS, type BeamKind, type ProjKind, type SpecialId, type StatusKind } from './defs';
+import { REGEN_FULL, SPECIALS, type BeamKind, type ProjKind, type SpecialId, type StatusKind } from './defs';
 import { END_CODE, v3, type EndReason, type SpecialMsg } from './msgs';
 import { PickupSystem, PICKUP_RADIUS } from './Pickups';
 import { chestOf, ProjectileSim, type Proj, type ProjHost } from './Projectiles';
@@ -16,12 +16,65 @@ const V = THREE.Vector3;
 const UP = new V(0, 1, 0);
 const _a = new V(), _b = new V(), _c = new V(), _o = new V(), _d = new V(), _e = new V(), _f = new V();
 const _eye = new V(), _aim = new V();
+const _k1 = new V(), _k2 = new V(), _k3 = new V(), _k4 = new V();
+const _sa = new V(), _sb = new V(), _sr = new V();
 
 /** Projétil → arma que o dispara (para sons/eventos de quem só recebe a mensagem). */
 const PROJ_SPECIAL: Record<ProjKind, SpecialId> = {
-  stone: 'estilingue', bottle: 'dolly', brick: 'tijolo', panela: 'panela', coxinha: 'coxinha', pombo: 'pombo', chinelo: 'chinelo',
+  stone: 'estilingue', bottle: 'dolly', brick: 'tijolo', panela: 'panela', bola: 'bola', pombo: 'pombo', chinelo: 'chinelo',
 };
-const BEAM_KINDS: SpecialId[] = ['lorenzetti', 'rexona', 'ventilador'];
+const BEAM_KINDS: SpecialId[] = ['lorenzetti', 'rexona', 'ventilador', 'cafe'];
+
+const clamp = (n: number, a: number, b: number): number => (n < a ? a : n > b ? b : n);
+const ok3 = (v: unknown): v is [number, number, number] => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
+
+/**
+ * Dano inteiro por tick que, somado, dá exatamente dps*tick em média (ex.: 4.5/tick → 4, 5, 4, 5...).
+ * `x` = dano por tick (dps * tick), `n` = nº do tick (1, 2, 3...).
+ */
+const tickDmg = (x: number, n: number): number => Math.floor(x * n + 1e-6) - Math.floor(x * (n - 1) + 1e-6);
+
+/** Menor distância entre os segmentos p1-q1 e p2-q2; `c1`/`c2` recebem os pontos mais próximos. */
+function segSeg(p1: THREE.Vector3, q1: THREE.Vector3, p2: THREE.Vector3, q2: THREE.Vector3, c1: THREE.Vector3, c2: THREE.Vector3): number {
+  const d1 = _sa.subVectors(q1, p1), d2 = _sb.subVectors(q2, p2), r = _sr.subVectors(p1, p2);
+  const a = d1.dot(d1), e = d2.dot(d2), f = d2.dot(r);
+  let s: number, t: number;
+  if (a <= 1e-9 && e <= 1e-9) { s = t = 0; }
+  else if (a <= 1e-9) { s = 0; t = clamp(f / e, 0, 1); }
+  else {
+    const c = d1.dot(r);
+    if (e <= 1e-9) { t = 0; s = clamp(-c / a, 0, 1); }
+    else {
+      const b = d1.dot(d2);
+      const den = a * e - b * b;
+      s = den > 1e-9 ? clamp((b * f - c * e) / den, 0, 1) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) { t = 0; s = clamp(-c / a, 0, 1); }
+      else if (t > 1) { t = 1; s = clamp((b - c) / a, 0, 1); }
+    }
+  }
+  c1.copy(p1).addScaledVector(d1, s);
+  c2.copy(p2).addScaledVector(d2, t);
+  return c1.distanceTo(c2);
+}
+
+/** Dano da pancada na parede do rodo (velocidade horizontal que a vítima tinha). */
+export function slamDamage(speed: number): number {
+  const P = SPECIALS.rodo.p;
+  return Math.min(P.slamMax, Math.max(0, Math.round((speed - P.slamBase) * P.slamMul)));
+}
+
+/** Pipa no ar (só em quem simula). */
+interface KiteState {
+  /** Direção atual (unitária) da mão para a pipa; segue a mira com atraso. */
+  dir: THREE.Vector3;
+  len: number;
+  pos: THREE.Vector3;
+  hand: THREE.Vector3;
+  age: number;
+  netT: number;
+  hit: boolean;
+}
 
 /** Estado de uso de uma arma maluca (só em quem simula: jogador local e bots no host). */
 export interface SState {
@@ -40,17 +93,35 @@ export interface SState {
   out: boolean;
   /** >0: acabou a munição, encerra daqui a pouco (deixa a animação do último uso aparecer). */
   endT: number;
+  /** Pipa no ar. */
+  kite: KiteState | null;
+  /** Rodo: golpe carregado em andamento (resolve quando `t` chega a 0). */
+  pend: { t: number } | null;
+  /** Ventilador: a hélice está picotando alguém / alguém no cone no último tick de dano. */
+  chop: boolean;
+  lastHit: boolean;
+  /** Loja: progresso (0..1) até a próxima unidade de munição voltar. */
+  regen: number;
 }
 
 export interface Trigger {
   held: boolean;
   pressed: boolean;
+  /** Botão direito (rodo: golpe carregado). */
+  alt?: boolean;
+  altPressed?: boolean;
 }
 
 export interface SpecialHud {
-  special: { id: SpecialId; name: string; short: string; hint: string; ammo: number; maxAmmo: number; unit: 'sec' | 'shot'; color: number } | null;
+  special: {
+    id: SpecialId; name: string; short: string; hint: string; ammo: number; maxAmmo: number; unit: 'sec' | 'shot'; color: number;
+    /** Em uso agora (jato ligado, pipa no ar, golpe carregando). */
+    active: boolean;
+  } | null;
   charge: number;
   blind: number;
+  /** Vapor do café na tela: 0..1. */
+  steam: number;
   burning: boolean;
   stunned: boolean;
   shocked: boolean;
@@ -71,6 +142,8 @@ export class SpecialSystem implements ProjHost {
   private pickupReq = new Map<number, number>();
   private puT = 0;
   private botAir = new Map<string, number>();
+  /** Rodo: última velocidade horizontal da vítima empurrada (para achar a pancada na parede). */
+  private slamPrev = new Map<string, number>();
 
   constructor(private g: Game) {
     this.pickups = new PickupSystem(g.scene, buildPickupModel);
@@ -81,6 +154,7 @@ export class SpecialSystem implements ProjHost {
       local: () => g.local,
       statusLeft: (id, k) => this.status.left(id, k),
       localBlind: () => (g.local ? this.status.blind(g.local.id) : 0),
+      localSteam: () => (g.local ? this.status.steam(g.local.id) : 0),
       groundY: (x, y, z) => {
         const h = g.world.raycast(probe.set(x, y + 0.4, z), down, 40);
         return h ? h.point.y : Math.max(0, y - 1);
@@ -127,6 +201,7 @@ export class SpecialSystem implements ProjHost {
     this.states.clear();
     this.pickupReq.clear();
     this.botAir.clear();
+    this.slamPrev.clear();
     for (const a of this.g.actors.values()) {
       a.special = null;
       a.specialAmmo = 0;
@@ -140,6 +215,7 @@ export class SpecialSystem implements ProjHost {
     this.status.clear(id);
     this.proj.removeOwner(id);
     this.botAir.delete(id);
+    this.slamPrev.delete(id);
     this.fx.clearActor(id);
   }
 
@@ -154,6 +230,7 @@ export class SpecialSystem implements ProjHost {
     const kind = a.special;
     const st = this.states.get(a.id);
     if (st?.beamOn) this.beamOff(a, st);
+    if (st?.kite) this.kiteOff(a, st);
     this.states.delete(a.id);
     if (!kind) return;
     a.special = null;
@@ -193,7 +270,7 @@ export class SpecialSystem implements ProjHost {
       case 'status': {
         const v = g.actors.get(e.victim);
         if (!v || !v.alive) return true;
-        this.status.apply(v.id, e.kind, e.dur, e.by);
+        this.status.apply(v.id, e.kind, e.dur, e.by, e.weapon ?? null);
         bus.emit('status:apply', { actorId: v.id, local: v.isLocal, kind: e.kind, dur: e.dur });
         if (v.isLocal && (e.kind === 'stun' || e.kind === 'blind')) g.camfx.addTrauma(0.3);
         return true;
@@ -213,12 +290,13 @@ export class SpecialSystem implements ProjHost {
   private give(a: Actor, kind: SpecialId, ammo: number): void {
     const prev = this.states.get(a.id);
     if (prev?.beamOn) this.beamOff(a, prev);
+    if (prev?.kite) this.kiteOff(a, prev);
     a.special = kind;
     a.specialAmmo = ammo;
     if (this.simulates(a)) {
       this.states.set(a.id, {
         id: kind, ammo, cd: 0.45, charge: 0, charging: false, beamOn: false, tickT: 0, tickN: 0,
-        confirmAcc: 0, confirmT: 0, netT: 0, out: false, endT: 0,
+        confirmAcc: 0, confirmT: 0, netT: 0, out: false, endT: 0, kite: null, pend: null, chop: false, lastHit: false, regen: 0,
       });
     }
     if (a.isLocal) {
@@ -232,7 +310,10 @@ export class SpecialSystem implements ProjHost {
     const g = this.g;
     const v = g.actors.get(e.victim);
     if (!v || !v.alive) return;
-    if (e.fall && e.by && e.by !== v.id) this.status.markPush(v.id, e.by, e.weapon ?? 'ventilador', SPECIALS.ventilador.p.fallT);
+    if (e.fall && e.by && e.by !== v.id) {
+      const w = e.weapon ?? 'ventilador';
+      this.status.markPush(v.id, e.by, w, SPECIALS[w].p.fallT ?? 3.5);
+    }
     this.applyImpulse(v, e.vel[0], e.vel[1], e.vel[2], e.cap, e.minY);
   }
 
@@ -265,8 +346,50 @@ export class SpecialSystem implements ProjHost {
     const push = this.status.pushOf(a.id);
     if (!push || impact < 9) return;
     this.status.clearPush(a.id);
-    const dmg = Math.min(110, Math.round((impact - 8) * 9));
+    const dmg = Math.min(130, Math.round((impact - 8) * 9 * (push.weapon === 'rodo' ? 1.6 : 1)));
     this.g.requestDamage({ attacker: push.by, victim: a.id, dmg, headshot: false, weapon: push.weapon ?? 'ventilador', dir: [0, 0, 0] });
+  }
+
+  /**
+   * Rodo: vítima lançada que perde de repente a velocidade horizontal bateu numa parede. Quem simula a vítima
+   * (jogador local; bot no host) cobra o dano em nome de quem bateu.
+   */
+  private checkSlams(): void {
+    const g = this.g;
+    const P = SPECIALS.rodo.p;
+    for (const a of g.actors.values()) {
+      const push = a.alive ? this.status.pushOf(a.id) : null;
+      if (!push || push.weapon !== 'rodo') { this.slamPrev.delete(a.id); continue; }
+      let vel: THREE.Vector3 | null = null;
+      if (a.isLocal) vel = g.player.body.vel;
+      else if (a.isBot && g.isHost && a.body) vel = a.body.vel;
+      if (!vel) continue;
+      const hs = Math.hypot(vel.x, vel.z);
+      const prev = this.slamPrev.get(a.id) ?? 0;
+      this.slamPrev.set(a.id, hs);
+      if (prev >= P.slamMin && prev - hs >= P.slamLoss && hs < prev * 0.75) this.slam(a, prev, push.by);
+    }
+  }
+
+  private slam(v: Actor, speed: number, by: string): void {
+    this.status.clearPush(v.id);
+    this.slamPrev.delete(v.id);
+    const dmg = slamDamage(speed);
+    const pos = chestOf(v, new V());
+    this.g.requestDamage({ attacker: by, victim: v.id, dmg, headshot: false, weapon: 'rodo', dir: [0, 0, 0] });
+    this.onSlam(v, by, pos, speed, dmg);
+    this.send({ t: 'sl', a: v.id, by, p: v3(pos), s: r2(speed) });
+  }
+
+  /** Efeito/feedback da pancada na parede (em todas as máquinas). */
+  private onSlam(v: Actor, by: string, pos: THREE.Vector3, speed: number, dmg: number): void {
+    bus.emit('special:slam', { victimId: v.id, byId: by, pos: pos.clone(), speed });
+    bus.emit('weapon:impact', { point: pos.clone(), normal: new V(0, 1, 0), surface: 'flesh' });
+    const shooter = this.g.actors.get(by);
+    if (shooter?.isLocal && v.id !== shooter.id) {
+      bus.emit('hit:confirm', { damage: dmg, headshot: false, killed: dmg >= v.hp, point: pos.clone() });
+    }
+    if (v.isLocal) { this.g.camfx.addTrauma(0.8); this.g.camfx.punchFov(-4); }
   }
 
   // ---------------------------------------------------------------- rede
@@ -302,12 +425,37 @@ export class SpecialSystem implements ProjHost {
         break;
       case 'pe': this.proj.applyEnd(m); break;
       case 'bm':
-        if (!BEAM_KINDS.includes(m.w)) return;
+        if (!BEAM_KINDS.includes(m.w) || !ok3(m.o) || !ok3(m.d) || !ok3(m.e)) return;
         bus.emit('special:beam', {
           actorId: a.id, local: false, kind: m.w, on: !!m.on, origin: new V(...m.o), dir: new V(...m.d), end: new V(...m.e),
-          end2: m.e2 ? new V(...m.e2) : null, hit: !!m.h,
+          end2: m.e2 && ok3(m.e2) ? new V(...m.e2) : null, hit: !!m.h, chop: !!m.c,
         });
         break;
+      case 'kt':
+        if (!ok3(m.o) || !ok3(m.k)) return;
+        bus.emit('special:kite', { actorId: a.id, local: false, on: !!m.on, origin: new V(...m.o), kite: new V(...m.k), hit: !!m.h });
+        break;
+      case 'fx': {
+        if (!ok3(m.o) || !ok3(m.d) || !SPECIALS[m.w]) return;
+        const dir = new V(...m.d);
+        if (dir.lengthSq() < 1e-6) return;
+        bus.emit('special:fire', { actorId: a.id, local: false, kind: m.w, origin: new V(...m.o), dir: dir.normalize(), charge: m.c });
+        a.model?.onFire();
+        break;
+      }
+      case 'gl': {
+        if (!ok3(m.p) || !Number.isFinite(m.s)) return;
+        const pos = new V(...m.p);
+        bus.emit('special:hit', { kind: 'bola', pos: pos.clone(), victimId: m.v, headshot: true, killed: true });
+        bus.emit('special:golaco', { actorId: a.id, local: false, victimId: m.v, pos, speed: m.s });
+        break;
+      }
+      case 'sl': {
+        // a vítima (m.a) mandou: a máquina dela é quem sabe; aqui só mostramos
+        if (!ok3(m.p) || !Number.isFinite(m.s)) return;
+        this.onSlam(a, String(m.by), new V(...m.p), m.s, slamDamage(m.s));
+        break;
+      }
     }
   }
 
@@ -340,14 +488,18 @@ export class SpecialSystem implements ProjHost {
         bus.emit('status:end', { actorId: id, local: !!a?.isLocal, kind });
       },
       g.isHost && g.match
-        ? (id, by) => {
+        ? (id, by, w) => {
           const v = g.actors.get(id);
-          if (v?.alive) g.match!.applyDamage({ attacker: by, victim: id, dmg: 7, headshot: false, weapon: 'rexona', dir: [0, 0, 0] });
+          const weapon: SpecialId = w ?? 'rexona';
+          const dmg = Math.round((SPECIALS[weapon].p.burnDps ?? 14) * 0.5);
+          if (v?.alive) g.match!.applyDamage({ attacker: by, victim: id, dmg, headshot: false, weapon, dir: [0, 0, 0] });
         }
         : null,
     );
+    this.checkSlams();
 
-    // pickups
+    // pickups (só no Treino: na loja as malucas se compram)
+    this.pickups.enabled = g.mode === 'treino';
     if (g.isHost && g.match && !g.match.ended) {
       const collectors: Actor[] = [];
       for (const a of g.actors.values()) if (a.isLocal || a.isBot) collectors.push(a);
@@ -434,10 +586,14 @@ export class SpecialSystem implements ProjHost {
     const blind = l ? this.status.blind(l.id) : 0;
     return {
       special: d && l
-        ? { id: d.id, name: d.name, short: d.short, hint: d.hint, ammo: Math.max(0, Math.ceil(l.specialAmmo - 1e-3)), maxAmmo: d.ammo, unit: d.unit, color: d.color }
+        ? {
+          id: d.id, name: d.name, short: d.short, hint: d.hint, ammo: Math.max(0, Math.ceil(l.specialAmmo - 1e-3)), maxAmmo: d.ammo, unit: d.unit, color: d.color,
+          active: !!st && (st.beamOn || !!st.kite || !!st.pend),
+        }
         : null,
       charge: st?.charging ? st.charge : 0,
       blind,
+      steam: l ? this.status.steam(l.id) : 0,
       burning: !!l && this.status.has(l.id, 'burn'),
       stunned: !!l && this.status.has(l.id, 'stun'),
       shocked: !!l && this.status.has(l.id, 'shock'),
@@ -470,6 +626,11 @@ export class SpecialSystem implements ProjHost {
     return this.states.has(a.id);
   }
 
+  /** A arma maluca do actor está "ligada" (pipa no ar). Usado pelos bots para saber se o próximo clique recolhe. */
+  isOn(a: Actor): boolean {
+    return !!this.states.get(a.id)?.kite;
+  }
+
   /** Jogador local largou a arma maluca (Treino: trocou de arma pelo teclado). */
   dropLocal(): void {
     const a = this.g.local;
@@ -479,6 +640,8 @@ export class SpecialSystem implements ProjHost {
   private control(a: Actor, st: SState, dt: number, trig: Trigger, eye: THREE.Vector3, dir: THREE.Vector3): void {
     const D = SPECIALS[st.id];
     st.cd -= dt;
+    this.regenAmmo(a, st, D, dt);
+    if (st.pend) this.tickPend(a, st, dt, eye, dir);
     if (st.endT > 0) {
       st.endT -= dt;
       if (st.endT <= 0) this.finish(a);
@@ -488,10 +651,17 @@ export class SpecialSystem implements ProjHost {
       case 'beam':
       case 'flame':
       case 'wind':
+      case 'jet':
         this.controlContinuous(a, st, dt, trig.held, eye, dir);
         break;
       case 'charge':
         this.controlCharge(a, st, dt, trig, eye, dir);
+        break;
+      case 'kite':
+        this.controlKite(a, st, dt, trig, eye, dir);
+        break;
+      case 'melee':
+        this.controlMelee(a, st, trig, eye, dir);
         break;
       default: {
         const auto = st.id === 'pombo';
@@ -500,9 +670,21 @@ export class SpecialSystem implements ProjHost {
     }
   }
 
-  /** Acabou: volta pra arma do gun game. */
+  /** Loja: a munição volta sozinha, em blocos de 1 (tiro ou segundo), enquanto a arma não está em uso. */
+  private regenAmmo(a: Actor, st: SState, D: (typeof SPECIALS)[SpecialId], dt: number): void {
+    if (this.g.mode !== 'gungame' || st.ammo >= D.ammo) return;
+    if (st.beamOn || st.charging || st.kite || st.pend || st.out) return;
+    st.regen += (dt * D.ammo) / (D.regen ?? REGEN_FULL);
+    if (st.regen < 1) return;
+    st.regen -= 1;
+    st.ammo = Math.min(D.ammo, st.ammo + 1);
+    a.specialAmmo = st.ammo;
+  }
+
+  /** Acabou a munição: no Treino volta pra arma comum. Na loja a arma fica (sem munição) e regenera. */
   private finish(a: Actor): void {
     const g = this.g;
+    if (g.mode === 'gungame') return;
     const kindEnded = a.special as SpecialId;
     if (g.isHost) g.hostPublish({ t: 'special-end', actor: a.id });
     else {
@@ -511,8 +693,8 @@ export class SpecialSystem implements ProjHost {
     }
   }
 
-  private afterUse(a: Actor, st: SState, cd: number): void {
-    st.ammo -= 1;
+  private afterUse(a: Actor, st: SState, cd: number, cost = 1): void {
+    st.ammo = Math.max(0, st.ammo - cost);
     a.specialAmmo = st.ammo;
     st.cd = cd;
     if (st.ammo <= 0 && st.id !== 'chinelo') st.endT = 0.5;
@@ -547,8 +729,8 @@ export class SpecialSystem implements ProjHost {
     bus.emit('special:fire', { actorId: a.id, local: a.isLocal, kind: PROJ_SPECIAL[kind], origin: origin.clone(), dir, charge });
     a.model?.onFire();
     if (a.isLocal) {
-      this.g.camfx.addTrauma(kind === 'coxinha' ? 0.3 : 0.12);
-      this.g.camfx.punchFov(kind === 'coxinha' ? 2.5 : 1.2);
+      this.g.camfx.addTrauma(kind === 'bola' ? 0.22 : 0.12);
+      this.g.camfx.punchFov(kind === 'bola' ? 2 : 1.2);
       this.fx.kickHeld();
     }
   }
@@ -575,25 +757,21 @@ export class SpecialSystem implements ProjHost {
         break;
       }
       case 'chinelo': {
-        const v = ld.clone();
-        v.y *= 0.4;
-        v.normalize().multiplyScalar(P.speed);
+        // ida reta na direção da mira (sem queda)
+        const v = ld.clone().multiplyScalar(P.speed);
         this.spawnProj(a, 'chinelo', origin, [v]);
         st.out = true;
         break;
       }
-      case 'coxinha': {
-        const vels: THREE.Vector3[] = [];
-        for (let i = 0; i < P.pellets; i++) {
-          // cone uniforme em volta da direção de saída
-          _c.crossVectors(ld, UP);
-          if (_c.lengthSq() < 1e-6) _c.set(1, 0, 0);
-          _c.normalize();
-          _e.crossVectors(_c, ld).normalize();
-          const ang = Math.random() * Math.PI * 2, r = Math.tan(P.spread) * Math.sqrt(Math.random());
-          vels.push(ld.clone().addScaledVector(_c, Math.cos(ang) * r).addScaledVector(_e, Math.sin(ang) * r).normalize().multiplyScalar(P.speed));
-        }
-        this.spawnProj(a, 'coxinha', origin, vels);
+      case 'bola': {
+        // chute: a bola nasce baixa, na frente dos pés, e sai pra onde você olha
+        origin.copy(eye).addScaledVector(dir, 0.85);
+        origin.y -= 0.55;
+        if (!this.g.world.visible(eye, origin)) origin.copy(eye).addScaledVector(dir, 0.2);
+        const v = dir.clone();
+        v.y += P.lift;
+        v.normalize().multiplyScalar(P.speed);
+        this.spawnProj(a, 'bola', origin, [v]);
         break;
       }
       default:
@@ -624,6 +802,160 @@ export class SpecialSystem implements ProjHost {
     this.afterUse(a, st, P.cd);
   }
 
+  // ---- pipa com cerol
+
+  private controlKite(a: Actor, st: SState, dt: number, trig: Trigger, eye: THREE.Vector3, dir: THREE.Vector3): void {
+    const P = SPECIALS.pipa.p;
+    if (trig.pressed && st.cd <= 0) {
+      st.cd = P.cd;
+      if (st.kite) this.kiteOff(a, st);
+      else if (st.ammo > 0) this.kiteOn(a, st, eye, dir);
+    }
+    const k = st.kite;
+    if (!k) return;
+
+    // a pipa gasta munição (segundos) enquanto está no ar
+    st.ammo = Math.max(0, st.ammo - dt);
+    a.specialAmmo = st.ammo;
+    k.age += dt;
+
+    // direção alvo = mira + viés pra cima (no começo, um empurrão extra: ela "sobe" pro céu); segue com atraso suave
+    const hz = Math.hypot(dir.x, dir.z);
+    let pitch = Math.asin(clamp(dir.y, -1, 1)) + P.bias + (k.age < P.launchT ? P.launchLift * (1 - k.age / P.launchT) : 0);
+    pitch = clamp(pitch, -0.6, 1.45);
+    const tgt = _k1;
+    if (hz > 1e-3) tgt.set((dir.x / hz) * Math.cos(pitch), Math.sin(pitch), (dir.z / hz) * Math.cos(pitch));
+    else tgt.set(k.dir.x, Math.sin(pitch), k.dir.z).normalize();
+    k.dir.lerp(tgt, 1 - Math.exp(-P.follow * dt)).normalize();
+
+    // a linha não atravessa parede: encurta se bater, estica devagar
+    this.muzzle(eye, dir, k.hand);
+    let want = P.len;
+    const wh = this.g.world.raycast(k.hand, k.dir, P.len + 1);
+    if (wh) want = Math.max(3, wh.dist - 0.7);
+    k.len = want < k.len ? want : k.len + Math.min(want - k.len, 30 * dt);
+    k.pos.copy(k.hand).addScaledVector(k.dir, k.len);
+    // balanço de pipa
+    _k2.crossVectors(k.dir, UP);
+    if (_k2.lengthSq() < 1e-6) _k2.set(1, 0, 0);
+    _k2.normalize();
+    k.pos.addScaledVector(_k2, Math.sin(k.age * 2.3) * 0.45 * (k.len / P.len));
+    k.pos.y += Math.sin(k.age * 1.7 + 1) * 0.35 * (k.len / P.len);
+
+    // cerol: dano por segundo em quem encosta na linha (distância segmento–corpo)
+    st.tickT -= dt;
+    let hit = false;
+    if (st.tickT <= 0) {
+      st.tickT = Math.max(st.tickT + P.tick, 0);
+      st.tickN++;
+      const dmg = tickDmg(P.dps * P.tick, st.tickN);
+      const world = this.g.world;
+      for (const v of this.g.actors.values()) {
+        if (v === a || !v.alive) continue;
+        _k3.set(v.pos.x, v.pos.y + v.height, v.pos.z);
+        const d = segSeg(k.hand, k.pos, v.pos, _k3, _k1, _k4);
+        if (d > 0.3 + P.reach) continue;
+        if (d > 0.05 && !world.visible(_k1, _k4)) continue;
+        hit = true;
+        const cut = _k4.clone();
+        this.hurt(a, v, { dmg, weapon: 'pipa', point: cut, dir: _k2.subVectors(k.pos, k.hand).normalize(), confirm: false, impact: false });
+        this.groupConfirm(a, st, dmg, v, cut);
+      }
+      k.hit = hit;
+    }
+
+    bus.emit('special:kite', { actorId: a.id, local: a.isLocal, on: true, origin: k.hand.clone(), kite: k.pos.clone(), hit: k.hit });
+    k.netT -= dt;
+    if (k.netT <= 0) {
+      k.netT = 1 / 15;
+      this.send({ t: 'kt', a: a.id, on: 1, o: v3(k.hand), k: v3(k.pos), h: k.hit ? 1 : 0 });
+    }
+    if (st.ammo <= 0) {
+      this.kiteOff(a, st);
+      this.finish(a);
+    }
+  }
+
+  private kiteOn(a: Actor, st: SState, eye: THREE.Vector3, dir: THREE.Vector3): void {
+    const hand = this.muzzle(eye, dir, new V());
+    st.kite = { dir: dir.clone().normalize(), len: 3, pos: hand.clone().addScaledVector(dir, 3), hand, age: 0, netT: 0, hit: false };
+    st.tickT = 0;
+    bus.emit('special:fire', { actorId: a.id, local: a.isLocal, kind: 'pipa', origin: hand.clone(), dir: dir.clone(), charge: 0 });
+    this.send({ t: 'fx', a: a.id, w: 'pipa', o: v3(hand), d: v3(dir), c: 0 });
+    a.model?.onFire();
+    if (a.isLocal) { this.g.camfx.addTrauma(0.12); this.fx.kickHeld(); }
+  }
+
+  private kiteOff(a: Actor, st: SState): void {
+    if (!st.kite) return;
+    const hand = st.kite.hand, pos = st.kite.pos;
+    st.kite = null;
+    bus.emit('special:kite', { actorId: a.id, local: a.isLocal, on: false, origin: hand.clone(), kite: pos.clone(), hit: false });
+    this.send({ t: 'kt', a: a.id, on: 0, o: v3(hand), k: v3(pos) });
+  }
+
+  // ---- rodo
+
+  private controlMelee(a: Actor, st: SState, trig: Trigger, eye: THREE.Vector3, dir: THREE.Vector3): void {
+    const P = SPECIALS.rodo.p;
+    if (st.pend || st.cd > 0 || st.ammo <= 0) return;
+    if (trig.altPressed) {
+      // golpe carregado: arma o taco e bate depois do "windup"
+      this.swingFx(a, eye, dir, 1);
+      st.pend = { t: P.windup };
+      this.afterUse(a, st, P.hCd, P.hCost);
+    } else if (trig.pressed) {
+      this.swingFx(a, eye, dir, 0);
+      this.rodoStrike(a, eye, dir, false);
+      this.afterUse(a, st, P.cd);
+    }
+  }
+
+  private tickPend(a: Actor, st: SState, dt: number, eye: THREE.Vector3, dir: THREE.Vector3): void {
+    st.pend!.t -= dt;
+    if (st.pend!.t > 0) return;
+    st.pend = null;
+    this.rodoStrike(a, eye, dir, true);
+  }
+
+  private swingFx(a: Actor, eye: THREE.Vector3, dir: THREE.Vector3, heavy: number): void {
+    const origin = this.muzzle(eye, dir, new V());
+    bus.emit('special:fire', { actorId: a.id, local: a.isLocal, kind: 'rodo', origin, dir: dir.clone(), charge: heavy });
+    this.send({ t: 'fx', a: a.id, w: 'rodo', o: v3(origin), d: v3(dir), c: heavy });
+    a.model?.onFire();
+    if (a.isLocal) { this.fx.kickHeld(1); this.g.camfx.punchFov(heavy ? 3 : 1.5); }
+  }
+
+  /** Golpe do rodo: cone largo à frente; tira vida e manda o inimigo voando (home run). */
+  private rodoStrike(a: Actor, eye: THREE.Vector3, dir: THREE.Vector3, heavy: boolean): void {
+    const P = SPECIALS.rodo.p;
+    const range = heavy ? P.hRange : P.range, half = heavy ? P.hCone : P.cone;
+    const dmg = heavy ? P.hDmg : P.dmg, kn = heavy ? P.hKnock : P.knock, up = heavy ? P.hUp : P.up;
+    let fx = dir.x, fz = dir.z;
+    const fl = Math.hypot(fx, fz);
+    if (fl < 1e-3) { fx = -Math.sin(a.yaw); fz = -Math.cos(a.yaw); } else { fx /= fl; fz /= fl; }
+    let any = false;
+    this.inCone(a, eye, dir, range, half, (v, _dist, chest) => {
+      any = true;
+      let hx = chest.x - eye.x, hz = chest.z - eye.z;
+      const hl = Math.hypot(hx, hz) || 1;
+      hx /= hl; hz /= hl;
+      let mx = fx * 0.6 + hx * 0.4, mz = fz * 0.6 + hz * 0.4;
+      const ml = Math.hypot(mx, mz) || 1;
+      mx /= ml; mz /= ml;
+      this.hurt(a, v, {
+        dmg, weapon: 'rodo', point: chest, dir,
+        imp: { v: [r2(mx * kn), r2(up), r2(mz * kn)], cap: 80, minY: up, fall: true },
+      });
+      bus.emit('special:hit', { kind: 'rodo', pos: chest.clone(), victimId: v.id, headshot: false, killed: dmg >= v.hp });
+    });
+    if (!any) {
+      const wh = this.g.world.raycast(eye, dir, range);
+      if (wh) bus.emit('weapon:impact', { point: wh.point.clone(), normal: wh.normal.clone(), surface: 'world', material: wh.material });
+    }
+    if (a.isLocal) this.g.camfx.addTrauma(any ? (heavy ? 0.7 : 0.45) : 0.2);
+  }
+
   // ---- armas contínuas (raio / jato / vento)
 
   private controlContinuous(a: Actor, st: SState, dt: number, held: boolean, eye: THREE.Vector3, dir: THREE.Vector3): void {
@@ -640,12 +972,12 @@ export class SpecialSystem implements ProjHost {
       // origem visual: perto do "cano"
       const origin = this.muzzle(eye, dir, new V());
       const kind = st.id as BeamKind;
-      bus.emit('special:beam', { actorId: a.id, local: a.isLocal, kind, on: true, origin, dir: dir.clone(), end: r.end, end2: r.end2, hit: r.hit });
+      bus.emit('special:beam', { actorId: a.id, local: a.isLocal, kind, on: true, origin, dir: dir.clone(), end: r.end, end2: r.end2, hit: r.hit, chop: st.chop });
       if (a.isLocal) this.fx.kickHeld(0.35);
       st.netT -= dt;
       if (st.netT <= 0) {
         st.netT = 1 / 15;
-        this.send({ t: 'bm', a: a.id, w: kind, on: 1, o: v3(origin), d: v3(dir), e: v3(r.end), e2: r.end2 ? v3(r.end2) : undefined, h: r.hit ? 1 : 0 });
+        this.send({ t: 'bm', a: a.id, w: kind, on: 1, o: v3(origin), d: v3(dir), e: v3(r.end), e2: r.end2 ? v3(r.end2) : undefined, h: r.hit ? 1 : 0, c: st.chop ? 1 : 0 });
       }
       if (st.ammo <= 0) {
         this.beamOff(a, st);
@@ -717,8 +1049,8 @@ export class SpecialSystem implements ProjHost {
         if (arc.chest) end2 = arc.chest;
         if (doTick) {
           const shock = st.tickN % 3 === 1;
-          this.zap(a, st, target, Math.round(P.dps * P.tick), tChest, shock);
-          if (arc.v && arc.chest) this.zap(a, st, arc.v, Math.round(P.arcDps * P.tick), arc.chest, shock);
+          this.zap(a, st, target, tickDmg(P.dps * P.tick, st.tickN), tChest, shock);
+          if (arc.v && arc.chest) this.zap(a, st, arc.v, tickDmg(P.arcDps * P.tick, st.tickN), arc.chest, shock);
         }
       } else {
         const wh = world.raycast(eye, dir, P.range);
@@ -733,9 +1065,28 @@ export class SpecialSystem implements ProjHost {
       this.inCone(a, eye, dir, P.range, P.cone, (v, _d2, chest) => {
         hit = true;
         if (!doTick) return;
-        const dmg = Math.round(P.dps * P.tick);
+        const dmg = tickDmg(P.dps * P.tick, st.tickN);
         const burning = this.status.left(v.id, 'burn') > 1.5;
         this.hurt(a, v, { dmg, weapon: 'rexona', point: chest, dir, st: burning ? undefined : 'burn', sd: P.burn, confirm: false, impact: false });
+        this.groupConfirm(a, st, dmg, v, chest);
+      });
+      return { end, end2: null, hit };
+    }
+
+    if (st.id === 'cafe') {
+      // jato de café fervendo: dano alto, escalda (burn) e embaça a tela (steam)
+      const wh = world.raycast(eye, dir, P.range);
+      end = wh ? wh.point.clone() : eye.clone().addScaledVector(dir, P.range);
+      this.inCone(a, eye, dir, P.range, P.cone, (v, _d2, chest) => {
+        hit = true;
+        if (!doTick) return;
+        const dmg = tickDmg(P.dps * P.tick, st.tickN);
+        const burning = this.status.left(v.id, 'burn') > 1.2;
+        const steamy = this.status.left(v.id, 'steam') > 0.9;
+        this.hurt(a, v, {
+          dmg, weapon: 'cafe', point: chest, dir, confirm: false, impact: false,
+          st: burning ? undefined : 'burn', sd: P.burn, st2: steamy ? undefined : 'steam', sd2: P.steam,
+        });
         this.groupConfirm(a, st, dmg, v, chest);
       });
       return { end, end2: null, hit };
@@ -745,19 +1096,30 @@ export class SpecialSystem implements ProjHost {
     const wh = world.raycast(eye, dir, P.range);
     end = wh ? wh.point.clone() : eye.clone().addScaledVector(dir, P.range);
     if (doTick) {
+      // vento forte no cone todo (dps) e, bem perto, a hélice picota (chopDps). Empurra e marca a vítima (queda = kill).
+      const wind = tickDmg(P.dps * P.tick, st.tickN), chopD = tickDmg(P.chopDps * P.tick, st.tickN);
+      let chopped = false;
       this.inCone(a, eye, dir, P.range, P.cone, (v, dist, chest) => {
         hit = true;
+        const chop = dist < P.chopRange;
+        if (chop) chopped = true;
         const f = 1 - 0.65 * (dist / P.range);
         _e.set(dir.x, 0, dir.z);
         _f.set(chest.x - eye.x, 0, chest.z - eye.z);
         if (_e.lengthSq() < 1e-4) _e.copy(_f);
         _e.normalize().multiplyScalar(0.6).addScaledVector(_f.normalize(), 0.4).normalize();
-        const push = P.push * f;
-        this.g.requestDamage({
-          attacker: a.id, victim: v.id, dmg: 0, headshot: false, weapon: 'ventilador', dir: [dir.x, dir.y, dir.z],
+        const push = P.push * f * (chop ? P.chopPush : 1);
+        const dmg = chop ? chopD : wind;
+        this.hurt(a, v, {
+          dmg, weapon: 'ventilador', point: chest, dir, confirm: false, impact: false,
           imp: { v: [r2(_e.x * push), 0, r2(_e.z * push)], cap: P.cap, minY: P.lift * (0.6 + 0.4 * f), fall: true },
         });
+        this.groupConfirm(a, st, dmg, v, chest);
       });
+      st.chop = chopped;
+      st.lastHit = hit;
+    } else {
+      hit = st.lastHit;
     }
     return { end, end2: null, hit };
   }
@@ -784,7 +1146,10 @@ export class SpecialSystem implements ProjHost {
   /** Pede dano ao host (ou aplica, se somos o host) + hit marker do jogador local. */
   private hurt(
     shooter: Actor, v: Actor,
-    o: { dmg: number; head?: boolean; weapon: SpecialId; point?: THREE.Vector3; dir?: THREE.Vector3; imp?: DamageRequest['imp']; st?: StatusKind; sd?: number; confirm?: boolean; impact?: boolean },
+    o: {
+      dmg: number; head?: boolean; weapon: SpecialId; point?: THREE.Vector3; dir?: THREE.Vector3; imp?: DamageRequest['imp'];
+      st?: StatusKind; sd?: number; st2?: StatusKind; sd2?: number; confirm?: boolean; impact?: boolean;
+    },
   ): void {
     const dmg = Math.round(o.dmg);
     const dir = o.dir;
@@ -797,6 +1162,7 @@ export class SpecialSystem implements ProjHost {
     };
     if (o.imp) r.imp = o.imp;
     if (o.st) { r.st = o.st; r.sd = o.sd; }
+    if (o.st2) { r.st2 = o.st2; r.sd2 = o.sd2; }
     this.g.requestDamage(r);
   }
 
@@ -818,22 +1184,28 @@ export class SpecialSystem implements ProjHost {
         break;
       }
       case 'brick': {
+        // one shot em qualquer parte do corpo
         const P = SPECIALS.tijolo.p;
-        if (head) {
-          if (victim.hp <= P.killHp) this.hurt(shooter, victim, { dmg: 250, head, weapon: 'tijolo', point, dir });
-          else this.hurt(shooter, victim, { dmg: P.headDmg, head, weapon: 'tijolo', point, dir, st: 'stun', sd: P.stun });
-        } else {
-          this.hurt(shooter, victim, { dmg: P.dmg, weapon: 'tijolo', point, dir });
-        }
-        killed = hp0 <= (head ? (hp0 <= P.killHp ? 999 : P.headDmg) : P.dmg);
+        this.hurt(shooter, victim, { dmg: P.dmg, head, weapon: 'tijolo', point, dir });
+        killed = P.dmg >= hp0;
         break;
       }
-      case 'coxinha': {
-        const P = SPECIALS.coxinha.p;
-        const fall = p.travel <= P.falloffStart ? 1 : Math.max(P.falloffMin, 1 - ((p.travel - P.falloffStart) / (P.falloffEnd - P.falloffStart)) * (1 - P.falloffMin));
-        const dmg = P.dmg * fall * (head ? 1.5 : 1);
-        this.hurt(shooter, victim, { dmg, head, weapon: 'coxinha', point, dir });
+      case 'bola': {
+        // dano cresce com a velocidade; na cabeça, rápida, mata na hora: GOLAÇO. Atravessa e pode acertar vários.
+        const P = SPECIALS.bola.p;
+        const speed = p.vel.length();
+        p.hitCool?.set(victim.id, p.age + P.hitCool);
+        const golaco = head && speed >= P.headMinSpeed;
+        const dmg = golaco ? 999 : clamp(speed * P.dmgPerSpeed, P.dmgMin, P.dmgMax);
+        this.hurt(shooter, victim, { dmg, head, weapon: 'bola', point, dir });
         killed = dmg >= hp0;
+        p.vel.multiplyScalar(P.carry);
+        p.vel.y += golaco ? 4 : 1.5;
+        if (golaco) {
+          bus.emit('special:golaco', { actorId: shooter.id, local: shooter.isLocal, victimId: victim.id, pos: point.clone(), speed });
+          this.send({ t: 'gl', a: shooter.id, v: victim.id, p: v3(point), s: r2(speed) });
+          if (shooter.isLocal) { this.g.camfx.addTrauma(0.55); this.g.camfx.punchFov(-5); }
+        }
         break;
       }
       case 'bottle':
@@ -845,23 +1217,22 @@ export class SpecialSystem implements ProjHost {
         break;
       }
       case 'chinelo': {
-        this.hurt(shooter, victim, { dmg: SPECIALS.chinelo.p.dmg, head, weapon: 'chinelo', point, dir });
-        killed = true;
+        const dmg = SPECIALS.chinelo.p.dmg; // metade da vida máxima: ida + volta matam
+        this.hurt(shooter, victim, { dmg, head, weapon: 'chinelo', point, dir });
+        killed = dmg >= hp0;
         break;
       }
       default:
         break;
     }
     if (p.kind !== 'bottle') bus.emit('special:hit', { kind: p.kind, pos: point.clone(), victimId: victim.id, headshot: head, killed });
-    return p.kind !== 'chinelo';
+    return p.kind !== 'chinelo' && p.kind !== 'bola';
   }
 
   ended(p: Proj, why: EndReason): void {
     const boom = p.kind === 'bottle' || p.kind === 'panela';
     if (p.auth) {
-      if (!(p.kind === 'coxinha' && why === 'world')) {
-        this.send({ t: 'pe', a: p.owner, n: p.n, p: v3(p.pos), w: END_CODE[boom ? 'explode' : why] });
-      }
+      this.send({ t: 'pe', a: p.owner, n: p.n, p: v3(p.pos), w: END_CODE[boom ? 'explode' : why] });
       if (p.kind === 'chinelo') {
         const st = this.states.get(p.owner);
         if (st) {

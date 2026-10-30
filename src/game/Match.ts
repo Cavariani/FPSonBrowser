@@ -1,6 +1,7 @@
-import type { Actor } from './Actor';
-import { isSpecialId, type AnyWeaponId, type SpecialId, type StatusKind } from './special/defs';
-import { GUNGAME_LADDER, killsNeeded, type WeaponId } from './weaponDefs';
+import { MAX_HP, type Actor } from './Actor';
+import { isSpecialId, SPECIALS, type AnyWeaponId, type SpecialId, type StatusKind } from './special/defs';
+import { ARMOR_ABSORB, canBuy, isShopItem, KILL_REWARD, LADDER, ladderWeapon, PRICE, SHOP_TIERS, START_MONEY, type ShopItemId } from './shop';
+import type { WeaponId } from './weaponDefs';
 
 export type V3 = [number, number, number];
 
@@ -11,7 +12,14 @@ export type V3 = [number, number, number];
 export type MatchEvent =
   | { t: 'damage'; attacker: string; victim: string; dmg: number; hp: number; headshot: boolean; weapon: AnyWeaponId; dir: V3 }
   | { t: 'kill'; killer: string; victim: string; weapon: AnyWeaponId; headshot: boolean }
-  | { t: 'level'; id: string; level: number; levelKills: number }
+  /** Dinheiro de `id` mudou (kill, entrada na partida). */
+  | { t: 'money'; id: string; money: number }
+  /** Nível de `id` na escada de malucas. */
+  | { t: 'level'; id: string; level: number }
+  /** Colete de `id` absorveu dano. */
+  | { t: 'armor'; id: string; armor: number }
+  /** `id` comprou `item` e ficou com `money`. Arma comum substitui a maluca; extras agem na hora. */
+  | { t: 'buy'; id: string; item: ShopItemId; money: number }
   | { t: 'spawn'; id: string; pos: V3; yaw: number; weapon: WeaponId }
   | { t: 'end'; winner: string }
   | { t: 'start' }
@@ -25,7 +33,8 @@ export type MatchEvent =
   | { t: 'special-end'; actor: string }
   /** Knockback/vento: `vel` é somado à velocidade da vítima NA MÁQUINA DELA (jogador) ou no host (bot). */
   | { t: 'impulse'; victim: string; vel: V3; cap?: number; minY?: number; by?: string; weapon?: SpecialId; fall?: boolean }
-  | { t: 'status'; victim: string; kind: StatusKind; dur: number; by?: string };
+  /** `weapon`: arma que aplicou (queimadura de café/Rexona conta o kill para a arma certa). */
+  | { t: 'status'; victim: string; kind: StatusKind; dur: number; by?: string; weapon?: SpecialId };
 
 /** Pedido de dano (cliente → host). O cliente que atira decide o acerto (somos amigos, sem anti-cheat). */
 export interface DamageRequest {
@@ -40,34 +49,41 @@ export interface DamageRequest {
   /** Status a aplicar e sua duração (s). */
   st?: StatusKind;
   sd?: number;
+  /** Segundo status no mesmo acerto (café: queimadura + vapor). */
+  st2?: StatusKind;
+  sd2?: number;
 }
 
 export interface MatchHost {
   actors(): Iterable<Actor>;
   getActor(id: string): Actor | undefined;
   pickSpawn(forId: string): { pos: V3; yaw: number };
+  /** 'gungame' = modo da loja (id antigo). */
   mode(): 'gungame' | 'treino';
   /** Aplica localmente e (se for host em rede) envia para todos. */
   publish(e: MatchEvent): void;
 }
 
-const STATUS_KINDS: StatusKind[] = ['burn', 'shock', 'blind', 'stun'];
+const STATUS_KINDS: StatusKind[] = ['burn', 'shock', 'blind', 'stun', 'steam'];
 
 export const RESPAWN_TIME = 2.5;
 const END_TIME = 7;
 const TREINO_WEAPONS: WeaponId[] = ['smg', 'rifle', 'shotgun', 'sniper', 'pistol'];
+/** Bots olham a loja de tempos em tempos. */
+const BOT_SHOP_EVERY = 2;
 
 /** Lógica autoritativa (só roda no host / offline). */
 export class Match {
   private respawns = new Map<string, number>();
   private endTimer = 0;
+  private botShopT = new Map<string, number>();
   ended = false;
   time = 0;
 
   constructor(private host: MatchHost) {}
 
   weaponFor(a: Actor): WeaponId {
-    if (this.host.mode() === 'gungame') return GUNGAME_LADDER[Math.min(a.level, GUNGAME_LADDER.length - 1)];
+    if (this.host.mode() === 'gungame') return 'knife'; // por baixo da maluca, que é a arma da mão
     return a.isBot ? TREINO_WEAPONS[Math.floor(Math.random() * TREINO_WEAPONS.length)] : a.weapon;
   }
 
@@ -75,25 +91,54 @@ export class Match {
     const s = this.host.pickSpawn(a.id);
     this.respawns.delete(a.id);
     this.host.publish({ t: 'spawn', id: a.id, pos: s.pos, yaw: s.yaw, weapon: this.weaponFor(a) });
+    // Escada: nasce com a maluca do seu nível (a comum comprada ficou pra trás ao morrer).
+    if (this.host.mode() === 'gungame') {
+      const kind = ladderWeapon(a.level);
+      this.host.publish({ t: 'special', actor: a.id, kind, ammo: SPECIALS[kind].ammo });
+    }
   }
 
   /** Novo participante entra já vivo. */
   join(a: Actor): void {
-    if (this.host.mode() === 'gungame') this.host.publish({ t: 'level', id: a.id, level: 0, levelKills: 0 });
+    if (this.host.mode() === 'gungame') {
+      this.host.publish({ t: 'level', id: a.id, level: 0 });
+      this.host.publish({ t: 'money', id: a.id, money: START_MONEY });
+    }
     this.spawn(a);
   }
 
   leave(id: string): void {
     this.respawns.delete(id);
+    this.botShopT.delete(id);
+  }
+
+  /** Host: `a` quer comprar `item`. Valida modo, vida, dinheiro e se faz sentido (já tem, vida cheia...). */
+  buy(a: Actor, item: unknown): void {
+    if (this.host.mode() !== 'gungame' || this.ended || !isShopItem(item) || canBuy(a, item) !== 'ok') return;
+    this.host.publish({ t: 'buy', id: a.id, item, money: a.money - PRICE[item] });
+  }
+
+  /** Bot: cura/colete quando precisa; arma comum só enquanto a maluca da escada ainda é fraca. */
+  private botShop(a: Actor): void {
+    if (a.hp < MAX_HP * 0.5) { this.buy(a, 'vida'); return; }
+    if (a.armor <= 0 && this.buyIf(a, 'colete')) return;
+    if (a.special && a.level < 6) {
+      const guns = SHOP_TIERS[0].items.filter((id) => canBuy(a, id) === 'ok' && PRICE[id] > 0).sort((x, y) => PRICE[y] - PRICE[x]).slice(0, 2);
+      if (guns.length) this.buy(a, guns[Math.floor(Math.random() * guns.length)]);
+    }
+  }
+
+  private buyIf(a: Actor, item: ShopItemId): boolean {
+    if (canBuy(a, item) !== 'ok') return false;
+    this.buy(a, item);
+    return true;
   }
 
   start(): void {
     this.ended = false;
     this.host.publish({ t: 'start' });
-    for (const a of this.host.actors()) {
-      this.host.publish({ t: 'level', id: a.id, level: 0, levelKills: 0 });
-      this.spawn(a);
-    }
+    // o evento 'start' já devolveu o dinheiro inicial a todos
+    for (const a of this.host.actors()) this.spawn(a);
   }
 
   applyDamage(r: DamageRequest): void {
@@ -101,7 +146,13 @@ export class Match {
     const v = this.host.getActor(r.victim);
     if (!v || !v.alive) return;
     const a = this.host.getActor(r.attacker);
-    const dmg = Number.isFinite(r.dmg) ? Math.max(0, r.dmg) : 0;
+    let dmg = Number.isFinite(r.dmg) ? Math.max(0, r.dmg) : 0;
+    // colete absorve parte do dano até acabar
+    if (v.armor > 0 && dmg > 0) {
+      const ab = Math.min(v.armor, dmg * ARMOR_ABSORB);
+      dmg -= ab;
+      this.host.publish({ t: 'armor', id: v.id, armor: Math.round(v.armor - ab) });
+    }
     const hp = Math.max(0, Math.round(v.hp - dmg));
     if (dmg > 0) {
       this.host.publish({ t: 'damage', attacker: r.attacker, victim: r.victim, dmg, hp, headshot: r.headshot, weapon: r.weapon, dir: r.dir });
@@ -114,22 +165,17 @@ export class Match {
     this.host.publish({ t: 'kill', killer: r.attacker, victim: r.victim, weapon: r.weapon, headshot: r.headshot });
     this.respawns.set(v.id, this.time + RESPAWN_TIME);
 
-    if (this.host.mode() !== 'gungame') return;
-    // Kill com arma maluca não sobe nível: só as armas da escada contam no gun game.
-    if (a && a !== v && !isSpecialId(r.weapon)) {
-      let level = a.level, lk = a.levelKills + 1;
-      if (lk >= killsNeeded(level)) { level++; lk = 0; }
-      if (level >= GUNGAME_LADDER.length) {
-        this.host.publish({ t: 'end', winner: a.id });
-        this.ended = true;
-        this.endTimer = END_TIME;
-        return;
-      }
-      this.host.publish({ t: 'level', id: a.id, level, levelKills: lk });
-      // Troca a arma na hora (gun game): o spawn não muda posição, só arma, via evento 'level'.
+    if (this.host.mode() !== 'gungame' || !a || a === v) return;
+    this.host.publish({ t: 'money', id: a.id, money: a.money + KILL_REWARD });
+    // cada kill sobe um nível na escada; matar no último nível vence
+    const level = a.level + 1;
+    if (level >= LADDER.length) {
+      this.host.publish({ t: 'end', winner: a.id });
+      this.ended = true;
+      this.endTimer = END_TIME;
+      return;
     }
-    // Morreu pra faca: perde um nível.
-    if (r.weapon === 'knife' && v.level > 0) this.host.publish({ t: 'level', id: v.id, level: v.level - 1, levelKills: 0 });
+    this.host.publish({ t: 'level', id: a.id, level });
   }
 
   /** Knockback e status que acompanham um acerto (valores saneados: o pedido pode vir de um cliente). */
@@ -141,9 +187,10 @@ export class Match {
         t: 'impulse', victim: v.id, vel: [x, y, z], cap: r.imp.cap, minY: r.imp.minY, by: r.attacker, weapon: sp, fall: !!r.imp.fall,
       });
     }
-    if (r.st && STATUS_KINDS.includes(r.st)) {
-      const dur = Math.max(0.1, Math.min(6, Number.isFinite(r.sd) ? r.sd! : 1));
-      this.host.publish({ t: 'status', victim: v.id, kind: r.st, dur, by: r.attacker });
+    for (const [kind, sd] of [[r.st, r.sd], [r.st2, r.sd2]] as const) {
+      if (!kind || !STATUS_KINDS.includes(kind)) continue;
+      const dur = Math.max(0.1, Math.min(6, Number.isFinite(sd) ? sd! : 1));
+      this.host.publish({ t: 'status', victim: v.id, kind, dur, by: r.attacker, weapon: sp });
     }
   }
 
@@ -153,6 +200,14 @@ export class Match {
       this.endTimer -= dt;
       if (this.endTimer <= 0) this.start();
       return;
+    }
+    if (this.host.mode() === 'gungame') {
+      for (const a of this.host.actors()) {
+        if (!a.isBot || !a.alive) continue;
+        const t = (this.botShopT.get(a.id) ?? BOT_SHOP_EVERY * Math.random()) - dt;
+        this.botShopT.set(a.id, t <= 0 ? BOT_SHOP_EVERY : t);
+        if (t <= 0) this.botShop(a);
+      }
     }
     for (const [id, at] of this.respawns) {
       if (this.time < at) continue;

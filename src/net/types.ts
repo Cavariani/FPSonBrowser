@@ -1,5 +1,6 @@
 import type { Game } from '../game/Game';
 import type { DamageRequest, MatchEvent } from '../game/Match';
+import type { ShopItemId } from '../game/shop';
 import type { SpecialId } from '../game/special/defs';
 import type { SpecialMsg } from '../game/special/msgs';
 import type { LobbyInfo } from '../ui/types';
@@ -22,6 +23,8 @@ export interface NetLink {
   requestPickup(id: number): void;
   /** Cliente → host: a munição da minha arma maluca acabou. */
   requestSpecialEnd(kind: SpecialId): void;
+  /** Cliente → host: quero comprar `item` na loja (o host valida dinheiro e vida). */
+  requestBuy(item: ShopItemId): void;
   /** Chamado todo frame: envia snapshots, pings etc. */
   update(dt: number): void;
   lobby(): LobbyInfo;

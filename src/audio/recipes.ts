@@ -3,6 +3,7 @@ import {
   type Rng,
 } from './dsp';
 import { SPECIAL_RECIPES } from './recipesSpecial';
+import { SPECIAL2_RECIPES } from './recipesSpecial2';
 
 /**
  * Receitas de síntese: cada uma gera os samples (mono) de um som.
@@ -483,6 +484,29 @@ add('respawn', 1, (rng, sr) => {
   return finalize(s, 0.3, 0, 0.1);
 });
 
+// Cheats de killstreak: bipes de terminal (notificação), ligar (varredura subindo) e desligar
+add('cheatReady', 1, (rng, sr) => {
+  const s = mk(sr)(0.5);
+  addTone(s, { t: 0, dur: 0.09, f0: 1320, wave: 'square', gain: 0.5, decay: 0.2, attack: 0.002, lp: 5000 });
+  addTone(s, { t: 0.11, dur: 0.09, f0: 1760, wave: 'square', gain: 0.5, decay: 0.2, attack: 0.002, lp: 5000 });
+  addTone(s, { t: 0.22, dur: 0.18, f0: 2637, wave: 'square', gain: 0.45, decay: 0.12, attack: 0.002, lp: 5000 });
+  return finalize(s, 0.28, 0, 0.05);
+});
+
+add('cheatOn', 1, (rng, sr) => {
+  const s = mk(sr)(0.7);
+  addTone(s, { dur: 0.3, f0: 220, f1: 1200, pitchTau: 0.09, wave: 'saw', gain: 0.5, decay: 0.25, attack: 0.004, lp: 4000 });
+  addNoise(s, rng, { dur: 0.25, attack: 0.002, decay: 0.08, gain: 0.25, filters: [{ type: 'hp', f: 3000 }] });
+  addTone(s, { t: 0.28, dur: 0.2, f0: 1760, wave: 'square', gain: 0.35, decay: 0.15, attack: 0.002, lp: 5000 });
+  return finalize(s, 0.35, 0.3, 0.1);
+});
+
+add('cheatOff', 1, (rng, sr) => {
+  const s = mk(sr)(0.4);
+  addTone(s, { dur: 0.25, f0: 900, f1: 180, pitchTau: 0.07, wave: 'square', gain: 0.5, decay: 0.12, attack: 0.002, lp: 3500 });
+  return finalize(s, 0.25, 0, 0.05);
+});
+
 add('matchStart', 1, (rng, sr) => {
   const s = mk(sr)(1.7);
   addBell(s, { f: 880, tau: 0.6, gain: 1 });
@@ -521,4 +545,4 @@ add('wind', 1, (rng, sr) => {
 
 // Armas malucas (pickups)
 
-RECIPES.push(...SPECIAL_RECIPES);
+RECIPES.push(...SPECIAL_RECIPES, ...SPECIAL2_RECIPES);

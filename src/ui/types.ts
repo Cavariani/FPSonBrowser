@@ -1,5 +1,6 @@
+import type { CheatsHud } from '../game/Cheats';
 import type { SpecialId } from '../game/special/defs';
-import type { WeaponDef, WeaponId } from '../game/weaponDefs';
+import type { WeaponDef } from '../game/weaponDefs';
 
 export interface ScoreRow {
   id: string;
@@ -7,6 +8,9 @@ export interface ScoreRow {
   kills: number;
   deaths: number;
   level: number;
+  money: number;
+  /** Arma na mão (comum ou maluca). */
+  weapon: string;
   ping: number;
   isLocal: boolean;
   isBot: boolean;
@@ -26,17 +30,23 @@ export interface HudState {
   spread: number;
   fov: number;
   zoomed: boolean;
+  /** 'gungame' = modo da loja (id antigo). */
   mode: 'gungame' | 'treino';
+  money: number;
+  armor: number;
+  /** Nível na escada de malucas (0 = mais fraca) e a escada inteira. */
   level: number;
-  levelKills: number;
-  killsNeeded: number;
-  ladder: WeaponId[];
+  ladder: SpecialId[];
+  /** Loja (tecla B): aberta, categoria (-1 = menu) e item na mão. */
+  shop: { open: boolean; page: number; held: string };
   dead: boolean;
   respawnIn: number;
   killerName: string;
+  /** Foto (data URL) de quem matou o jogador local, se ele tiver uma. */
+  killerFace: string | null;
   showScoreboard: boolean;
   scoreboard: ScoreRow[];
-  /** Nome do líder do gun game e seu nível. */
+  /** Líder da escada. */
   leader: { name: string; level: number; isLocal: boolean } | null;
   fps: number;
   speed: number;
@@ -48,7 +58,7 @@ export interface HudState {
   /** Posição do jogador local no plano XZ. */
   posX: number;
   posZ: number;
-  /** Todos os outros actors (no gun game, todo mundo é inimigo). */
+  /** Todos os outros actors (todo mundo é inimigo). */
   radar: RadarBlip[];
 
   // ---- armas malucas (pickups). Quando `special` não é null, `weapon`/`ammo` acima já descrevem a arma maluca
@@ -59,14 +69,18 @@ export interface HudState {
   charge: number;
   /** Cocô de pombo na tela: 0..1 (1 = coberta; some em ~3 s). O SpecialFX já desenha um overlay DOM. */
   blind: number;
+  /** Vapor do café na tela: 0..1 (1 = embaçada; some em ~2 s). O SpecialFX já desenha um overlay DOM. */
+  steam: number;
   /** Pegando fogo (queimando). */
   burning: boolean;
-  /** Atordoado (tijolo na cabeça): mira travada. */
+  /** Atordoado: mira travada (hoje nenhuma arma aplica; o tijolo agora mata de um acerto). */
   stunned: boolean;
   /** Tomando choque do chuveiro. */
   shocked: boolean;
   /** Pickups ativos no mapa (para o minimapa). */
   pickups: PickupBlip[];
+  /** Killstreaks-cheat: streak, guardados, ativo, timer e caixas de ESP já projetadas. */
+  cheats: CheatsHud;
 }
 
 export interface SpecialHud {
@@ -79,8 +93,10 @@ export interface SpecialHud {
   maxAmmo: number;
   /** 'sec' = munição em segundos (raio/jato); 'shot' = nº de usos. */
   unit: 'sec' | 'shot';
-  /** Cor 0xRRGGBB da arma. */
+  /** Cor 0xRRGGBB da arma (distinta entre as 13). */
   color: number;
+  /** Em uso agora: jato ligado, pipa no ar, golpe carregado armando. */
+  active: boolean;
 }
 
 export interface PickupBlip {

@@ -4,7 +4,7 @@ import type { SpecialId } from '../../game/special/defs';
 import { buildHeldModel, updateBands, type HeldParts } from '../special/models';
 import { softTexture } from '../special/pools';
 import { applyPose, buildArm, pose, type Pose } from './arms';
-import { vmMaterial } from './build';
+import { Builder, vmMaterial } from './build';
 import { clamp01, pulse, seg, smooth } from './spring';
 
 /**
@@ -53,10 +53,6 @@ const DEFS: Record<SpecialId, RigDef> = {
     hipPos: [0.13, -0.17, -0.38], hipRot: [0.12, 0.18, 0.0], right: pose(0.026, -0.006, 0.01, 0.45, 0.32, -1.45),
     left: pose(-0.04, -0.13, -0.2, 0.6, -0.4, Math.PI), leftGrip: false, thrown: true,
   },
-  coxinha: {
-    hipPos: [0.17, -0.19, -0.44], hipRot: [0.07, 0.4, 0], right: R,
-    left: pose(-0.022, -0.01, -0.2, 0.75, -0.42, 1.55), leftGrip: true,
-  },
   ventilador: {
     hipPos: [0.15, -0.21, -0.46], hipRot: [0.06, 0.25, 0], right: R,
     left: null, leftGrip: false,
@@ -65,10 +61,28 @@ const DEFS: Record<SpecialId, RigDef> = {
     hipPos: [0.18, -0.2, -0.5], hipRot: [0.2, 0.35, 0.1], right: pose(0.014, -0.0, 0.0, 0.45, 0.32, -1.45),
     left: null, leftGrip: true, thrown: true,
   },
+  bola: {
+    hipPos: [0.13, -0.15, -0.45], hipRot: [0.1, 0.3, 0], right: pose(0.01, -0.1, -0.08, 0.3, 0.1, Math.PI),
+    left: null, leftGrip: false, thrown: true,
+  },
+  pipa: {
+    // lata na direita, a esquerda segura a linha na frente (dá linha / puxa)
+    hipPos: [0.19, -0.21, -0.5], hipRot: [0.1, 0.3, 0], right: pose(0.03, 0.03, -0.04, 0.45, 0.32, -1.45),
+    left: pose(-0.03, 0.08, -0.2, 0.9, -0.5, 1.5), leftGrip: true,
+  },
+  rodo: {
+    // posição de rebatedor: cabo pra cima, por cima do ombro direito
+    hipPos: [0.16, -0.24, -0.42], hipRot: [0.95, 0.25, 0.5], right: pose(0.026, -0.006, 0.01, 0.45, 0.32, -1.45),
+    left: pose(-0.026, -0.006, -0.1, 0.45, -0.32, 1.45), leftGrip: true,
+  },
+  cafe: {
+    hipPos: [0.2, -0.22, -0.5], hipRot: [0.06, 0.4, 0.04], right: R,
+    left: null, leftGrip: false,
+  },
 };
 
 const BACK_FEEL: Partial<Record<SpecialId, [number, number]>> = {
-  coxinha: [0.045, 0.12], estilingue: [0.02, 0.06], dolly: [0.0, 0.0], tijolo: [0.0, 0.0],
+  estilingue: [0.02, 0.06], dolly: [0.0, 0.0], tijolo: [0.0, 0.0],
 };
 
 // ------------------------------------------------------------------ partículas no viewmodel
@@ -80,6 +94,9 @@ const _s = new THREE.Vector3();
 const _c = new THREE.Color();
 const _c2 = new THREE.Color();
 const _v = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+const _v3 = new THREE.Vector3();
+const _v4 = new THREE.Vector3();
 
 /** Quads aditivos na cena do viewmodel (câmera fixa olhando -Z: não precisa girar para a câmera). */
 class VmFx {
@@ -174,6 +191,7 @@ interface Rig {
   tick: (dt: number, t: number, active?: number) => void;
   right: THREE.Mesh;
   left: THREE.Mesh | null;
+  line2?: THREE.Mesh;
   hipPos: THREE.Vector3;
   hipRot: THREE.Euler;
 }
@@ -202,13 +220,50 @@ function buildRig(id: SpecialId): Rig {
     root.add(left);
   }
   root.visible = false;
+  // pipa: segundo trecho de linha (da mão esquerda até o céu)
+  let line2: THREE.Mesh | undefined;
+  if (id === 'pipa') {
+    line2 = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.004, 1).translate(0, 0, 0.5), new THREE.MeshBasicMaterial({ color: 0xfff4d0 }));
+    line2.frustumCulled = false;
+    root.add(line2);
+  }
   return {
     id, def, root, item, parts: item.userData.parts as HeldParts, tick: item.userData.tick,
-    right, left,
+    right, left, line2,
     hipPos: new THREE.Vector3(...def.hipPos),
     hipRot: new THREE.Euler(def.hipRot[0], def.hipRot[1], def.hipRot[2], 'YXZ'),
   };
 }
+
+/**
+ * Perna do chute (bola): chuteira preta com listras brancas e travas, meião amarelo com faixa verde, caneleira.
+ * Origem = tornozelo; bico do pé em -Z; canela sobe em +Y (até o joelho, fora da tela).
+ */
+function buildLeg(): THREE.Group {
+  const g = new THREE.Group();
+  const b = new Builder();
+  // chuteira
+  b.box(PALK.boot, 0.1, 0.07, 0.24, 0, -0.03, -0.07);
+  b.box(PALK.boot, 0.09, 0.05, 0.06, 0, -0.035, -0.2, 0.25);
+  for (const x of [-0.03, 0.0, 0.03]) b.box(0xffffff, 0.102, 0.012, 0.016, 0, -0.01, -0.08 + x, 0, 0, 0);
+  b.box(0xffffff, 0.012, 0.05, 0.1, 0.051, -0.025, -0.05, 0, 0, 0);
+  b.box(0xffffff, 0.012, 0.05, 0.1, -0.051, -0.025, -0.05, 0, 0, 0);
+  for (const z of [-0.17, -0.11, -0.04, 0.03]) for (const x of [-0.03, 0.03]) b.box(PALK.stud, 0.018, 0.016, 0.018, x, -0.072, z);
+  b.box(PALK.boot, 0.1, 0.04, 0.06, 0, -0.02, 0.04); // calcanhar
+  // meião + caneleira
+  b.box(PALK.sock, 0.095, 0.4, 0.1, 0, 0.2, 0.0);
+  b.box(PALK.sockBand, 0.097, 0.03, 0.102, 0, 0.36, 0.0);
+  b.box(PALK.sockBand, 0.097, 0.03, 0.102, 0, 0.31, 0.0);
+  b.box(PALK.guard, 0.07, 0.2, 0.02, 0, 0.18, -0.055);
+  // joelho/short
+  b.box(PALK.skin, 0.1, 0.12, 0.11, 0, 0.45, 0.0);
+  b.box(PALK.shorts, 0.15, 0.2, 0.15, 0, 0.6, 0.0);
+  const m = b.mesh(vmMaterial);
+  g.add(m);
+  g.visible = false;
+  return g;
+}
+const PALK = { boot: 0x16171a, stud: 0xd8dde3, sock: 0xffd200, sockBand: 0x2f9e4a, guard: 0x2a4fa8, skin: 0xd8a47e, shorts: 0x2a4fa8 };
 
 export interface Offs {
   px: number; py: number; pz: number; rx: number; ry: number; rz: number;
@@ -233,27 +288,30 @@ export class SpecialHands {
   private pouchV = 0;
   private beamT = 99;
   private active = 0;
-  private spinV = 0;
   private emitAcc = 0;
-  private hopV = 0;
-  private hop = 0;
   private struggle = 0;
+  /** Rodo: tempo desde o início do golpe e se é o carregado. */
+  private swingT = 99;
+  private swingHeavy = false;
   private readonly offs: Offs = { px: 0, py: 0, pz: 0, rx: 0, ry: 0, rz: 0 };
 
   /** `kick(back, up, side)` → molas de recuo do ViewModel. */
+  /** Perna do chute (cena do viewmodel, espaço da câmera: não segue o bob da mão). */
+  private leg = buildLeg();
+  private tug = 0;
+
   constructor(scene: THREE.Scene, private kick: (back: number, up: number, side: number) => void) {
     scene.add(this.fx.mesh);
+    scene.add(this.leg);
     bus.on('special:fire', (e) => {
       if (!e.local || !this.rig || e.kind !== this.rig.id) return;
       this.fireT = 0;
       this.catchT = 99;
       const f = BACK_FEEL[e.kind];
       if (f) this.kick(f[0], f[1], 0.02);
-      if (e.kind === 'coxinha') {
-        this.spinV += 30;
-        this.hopV += 1.2;
-        const p = this.world(this.rig.parts.muzzle);
-        for (let i = 0; i < 8; i++) this.fx.spawn(p, rnd(0.3), rnd(0.3) + 0.1, -0.6 - Math.random() * 0.6, 0.25, 0.03, 0.12, 0xfff0c0, 0x805020);
+      if (e.kind === 'rodo') {
+        this.swingT = 0;
+        this.swingHeavy = (e.charge ?? 0) > 0.5;
       }
       if (e.kind === 'estilingue') {
         this.pouchV = -2.2;
@@ -270,6 +328,10 @@ export class SpecialHands {
       this.charging = e.charge > 0;
     });
     bus.on('special:beam', (e) => {
+      if (!e.local) return;
+      this.beamT = e.on ? 0 : 99;
+    });
+    bus.on('special:kite', (e) => {
       if (!e.local) return;
       this.beamT = e.on ? 0 : 99;
     });
@@ -298,6 +360,8 @@ export class SpecialHands {
     }
     this.rig = null;
     this.fx.clear();
+    this.leg.visible = false;
+    this.swingT = 99;
     if (!id) return;
     let r = this.rigs.get(id);
     if (!r) this.rigs.set(id, (r = buildRig(id)));
@@ -318,6 +382,19 @@ export class SpecialHands {
     return o.getWorldPosition(_v);
   }
 
+  /** Ponto no espaço do pai de `o` → mundo (para lookAt). */
+  private toWorldOf(o: THREE.Object3D, p: THREE.Vector3): THREE.Vector3 {
+    return _v4.copy(p).applyMatrix4(o.parent!.matrixWorld);
+  }
+
+  /** Rastro de "vento" atrás da cabeça do rodo durante o golpe. */
+  private trail(r: Rig, dt: number, rate: number): void {
+    this.emit(dt, rate, () => {
+      const p = this.world(r.parts.muzzle);
+      this.fx.spawn(p, 0, 0, 0, 0.12, 0.08, 0.02, 0xdff4ff, 0x203040);
+    });
+  }
+
   /** Avança animações; devolve offsets para somar no holder. */
   update(dt: number, dtReal: number): Offs {
     const o = this.offs;
@@ -336,6 +413,7 @@ export class SpecialHands {
     item.position.set(0, 0, 0);
     item.rotation.set(0, 0, 0);
     item.visible = true;
+    this.leg.visible = false;
     applyPose(r.right, r.def.right, r.def.right, 0);
     if (r.left && r.def.left) applyPose(r.left, r.def.left, r.def.left, 0);
 
@@ -354,7 +432,13 @@ export class SpecialHands {
     if (r.def.thrown && ft < back + 1) {
       const fling = seg(ft, 0, 0.06) * (1 - seg(ft, 0.06, 0.3));
       const follow = seg(ft, 0.04, 0.16) * (1 - seg(ft, back, back + 0.3));
-      if (r.id === 'pombo') {
+      if (r.id === 'bola') {
+        // a mão solta a bola e sai da frente do pé
+        o.py -= 0.05 * fling;
+        o.px += 0.1 * follow;
+        o.py -= 0.12 * follow;
+        o.rz -= 0.4 * follow;
+      } else if (r.id === 'pombo') {
         o.pz -= 0.14 * fling;
         o.py += 0.1 * fling;
         o.rx += 0.4 * fling;
@@ -509,14 +593,120 @@ export class SpecialHands {
         break;
       }
 
-      case 'coxinha': {
-        this.spinV *= Math.exp(-dt * 2.5);
-        P.spinner!.rotation.z += (1.2 + this.spinV) * dt;
-        P.crank!.rotation.x -= (0.8 + this.spinV * 0.7) * dt;
-        this.hopV += (-60 * this.hop - 6 * this.hopV) * dt;
-        this.hop += this.hopV * dt;
-        P.bowl!.position.y = Math.max(0, this.hop) * 0.03;
-        P.bowl!.rotation.y = this.hop * 0.3;
+      case 'bola': {
+        // embaixadinha na mão enquanto espera
+        if (item.visible && ft > 0.6) {
+          const cyc = (t % 1.3) / 1.3;
+          item.position.y = Math.abs(Math.sin(cyc * Math.PI)) * 0.06 - 0.01;
+          item.rotation.x = -cyc * Math.PI * 2;
+        }
+        // chute: a perna entra por baixo, encontra a bola e segue pra cima
+        if (ft < 0.55) {
+          const L = this.leg;
+          L.visible = true;
+          const a1 = seg(ft, 0, 0.07), a2 = seg(ft, 0.07, 0.2), a3 = seg(ft, 0.24, 0.55);
+          // início (fora, embaixo) → impacto → follow-through alto → cai
+          const x = 0.22 + (0.12 - 0.22) * a1 + (0.04 - 0.12) * a2 + (0.16 - 0.04) * a3;
+          const y = -0.72 + (-0.2 + 0.72) * a1 + (-0.02 + 0.2) * a2 + (-0.95 + 0.02) * a3;
+          const z = -0.35 + (-0.56 + 0.35) * a1 + (-0.72 + 0.56) * a2 + (-0.4 + 0.72) * a3;
+          L.position.set(x, y, z);
+          // canela desce pra trás (o joelho fica fora da tela, embaixo); bico pra cima: chutão de bico
+          L.rotation.set(1.6 + 0.5 * a1 + 0.35 * a2 - 0.9 * a3, -0.25 + 0.3 * a2, 0.1, 'YXZ');
+          if (ft < 0.09 && ft + dt >= 0.07) this.kick(0, 0.05, 0.03);
+        }
+        break;
+      }
+
+      case 'pipa': {
+        // lata gira (rápido com a pipa no ar), a mão esquerda dá puxões na linha
+        const a = this.active;
+        P.reel!.rotation.z += (0.4 + a * 16) * dt;
+        const cyc = (t % 0.55) / 0.55;
+        const pull = a * pulse(cyc, 0, 0.5, 0.25);
+        this.tug += (pull - this.tug) * Math.min(1, dt * 30);
+        if (r.left && r.def.left) {
+          r.left.position.z += this.tug * 0.09;
+          r.left.position.y -= this.tug * 0.03;
+          r.left.rotation.x += this.tug * 0.3;
+        }
+        o.rx -= 0.08 * a + this.tug * 0.03;
+        o.px += rnd(0.0015) * a; o.py += rnd(0.0015) * a;
+        // linha: lata → mão esquerda → céu
+        if (r.left && r.line2) {
+          const hand = _v2.copy(r.left.position);
+          hand.y += 0.015;
+          const ln = P.line!;
+          ln.position.set(0, 0.105, -0.06);
+          ln.lookAt(this.toWorldOf(ln, hand));
+          ln.scale.set(1, 1, Math.max(0.01, ln.position.distanceTo(hand)));
+          // o box da linha cresce para -z: vira 180° pra apontar pra mão
+          ln.rotateY(Math.PI);
+          r.line2.visible = a > 0.05;
+          r.line2.position.copy(hand);
+          _v.set(-0.15, 0.45, -2).add(hand);
+          r.line2.lookAt(this.toWorldOf(r.line2, _v));
+          r.line2.scale.set(1, 1, 3);
+          // cerol brilhando
+          if (a > 0.3) this.emit(dtReal, 12 * a, () => {
+            const p = r.line2!.getWorldPosition(_v3);
+            this.fx.spawn(p.add(_v.set(-0.04, 0.16, -0.27).multiplyScalar(Math.random() * 2)), 0, 0, 0, 0.08, 0.025, 0.004, 0xffffff, 0xff60ff);
+          });
+        }
+        break;
+      }
+
+      case 'rodo': {
+        const sw = this.swingT += dt;
+        if (this.swingHeavy) {
+          // prepara (0.3 s) tremendo de força, depois o home run com giro completo
+          const wind = seg(sw, 0, 0.3) * (1 - seg(sw, 0.3, 0.36));
+          const hit = seg(sw, 0.3, 0.4) * (1 - seg(sw, 0.75, 1.1));
+          const thru = seg(sw, 0.4, 0.62) * (1 - seg(sw, 0.75, 1.1));
+          o.rx += 0.3 * wind - 0.9 * hit;
+          o.ry += -0.6 * wind + 1.3 * hit + 1.2 * thru;
+          o.rz += 0.15 * wind - 0.4 * hit;
+          o.px += 0.05 * wind - 0.02 * hit - 0.1 * thru;
+          o.py += 0.05 * wind + 0.12 * hit;
+          o.pz += 0.06 * wind - 0.08 * hit;
+          if (sw < 0.3) { o.px += rnd(0.004) * wind; o.rz += rnd(0.03) * wind; o.py += rnd(0.003) * wind; }
+          if (sw > 0.33 && sw < 0.33 + dt) this.kick(0.0, -0.06, 0.06);
+          if (sw > 0.3 && sw < 0.5) this.trail(r, dtReal, 140);
+        } else {
+          const wind = seg(sw, 0, 0.05) * (1 - seg(sw, 0.05, 0.09));
+          const hit = seg(sw, 0.05, 0.14) * (1 - seg(sw, 0.24, 0.5));
+          o.rx += 0.15 * wind - 0.9 * hit;
+          o.ry += -0.25 * wind + 1.25 * hit;
+          o.rz -= 0.4 * hit;
+          o.py += 0.12 * hit;
+          o.pz -= 0.08 * hit;
+          if (sw > 0.05 && sw < 0.2) this.trail(r, dtReal, 100);
+        }
+        if (sw > 1.1) {
+          // parado: "girando o taco" de leve, pronto pro arremesso
+          o.rx += Math.sin(t * 1.4) * 0.02;
+          o.rz += Math.sin(t * 2.1) * 0.03;
+        }
+        break;
+      }
+
+      case 'cafe': {
+        const a = this.active;
+        // mão esquerda aperta o botão de pressão
+        // o polegar aperta o botão de pressão e a garrafa inclina "servindo"
+        P.nozzle!.position.y = 0.188 - a * 0.009;
+        if (a > 0.05) {
+          o.px += rnd(0.003) * a; o.py += rnd(0.003) * a; o.pz += 0.012 * a;
+          o.rx -= 0.3 * a;
+          o.rz += 0.1 * a;
+          this.emit(dtReal, 80 * a, () => {
+            const p = this.world(P.muzzle);
+            if (Math.random() < 0.7) this.fx.spawn(p, rnd(0.12), rnd(0.1) + 0.05, -1.5 - Math.random() * 0.6, 0.25, 0.025, 0.08, 0x9a5a22, 0x3a1a08, 1.5);
+            else this.fx.spawn(p, rnd(0.2), 0.3 + Math.random() * 0.3, -0.8, 0.5, 0.04, 0.2, 0x8a8a8a, 0x202020, -0.3);
+          });
+        } else if (item.visible && Math.random() < dtReal * 8) {
+          // fumacinha de café quente saindo do bico
+          this.fx.spawn(this.world(P.muzzle), rnd(0.04), 0.25, rnd(0.04), 0.7, 0.012, 0.06, 0x9a9a9a, 0x202020, -0.15);
+        }
         break;
       }
 

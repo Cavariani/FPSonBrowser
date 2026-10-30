@@ -489,7 +489,7 @@ export class ViewModel {
     }
 
     if (m.id === 'knife') {
-      const o = this.meleeAnim();
+      const o = this.meleeAnim(m);
       px += o.px; py += o.py; pz += o.pz;
       rx += o.rx; ry += o.ry; rz += o.rz;
     }
@@ -622,10 +622,11 @@ export class ViewModel {
   }
 
   /** Faca: leve = corte lateral alternando lados; pesado = estocada com recuo lento. */
-  private meleeAnim(): { px: number; py: number; pz: number; rx: number; ry: number; rz: number } {
+  // `m` vem do update: this.m pode já ter trocado de arma no meio do frame (faca → outra arma)
+  private meleeAnim(m: { top?: THREE.Object3D }): { px: number; py: number; pz: number; rx: number; ry: number; rz: number } {
     const t = this.meleeT;
     const o = { px: 0, py: 0, pz: 0, rx: 0, ry: 0, rz: 0 };
-    const blade = this.m.top!;
+    const blade = m.top!;
     blade.rotation.set(0, 0, 0);
     if (!this.meleeHeavy) {
       const D = 0.43;
