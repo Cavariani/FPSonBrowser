@@ -47,7 +47,7 @@ Não há testes automatizados.
 ## Fluxo de trabalho
 
 - Depois de editar, rodar `npm run typecheck`. Se a mudança for visível/jogável, subir o dev server (porta 5199, via `preview_start`) e checar console e visual no navegador antes de dizer que terminou.
-- **Pode commitar e dar push.** Atenção: push na `main` dispara deploy no GitHub Pages (`.github/workflows/deploy.yml`), ou seja, vai pro ar pros amigos. Só dar push com typecheck/build passando.
+- **Sempre commitar e dar push ao terminar cada mudança, sem perguntar** (pedido explícito do Pedro). Atenção: push na `main` dispara deploy no GitHub Pages (`.github/workflows/deploy.yml`), ou seja, vai pro ar pros amigos. Só dar push com typecheck/build passando.
 - Mensagens de commit em português, curtas, descrevendo o que mudou no jogo.
 - Versão em `package.json` aparece no menu (`__APP_VERSION__`); subir quando fizer sentido marcar uma release.
 - Nunca usar a porta 5173 (é de outro projeto, o ERP).

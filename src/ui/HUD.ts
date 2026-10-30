@@ -59,6 +59,7 @@ export class HUD {
   private shop!: ShopHud;
   private armEl!: HTMLElement;
   private buffsEl!: HTMLElement; private buffSig = '';
+  private ctaTimer = 0;
   private ctaEl!: HTMLElement; private ctaSub!: HTMLElement;
   private fpsEl!: HTMLElement;
   private chargeEl!: HTMLElement; private chargeBar!: HTMLElement;
@@ -212,7 +213,13 @@ export class HUD {
       else if (e.victimId === localId) this.golaco('TOMOU UM GOLAÇO', kmh ? `${kmh} km/h na cabeça` : '', false);
     });
     bus.on('player:death', () => { this.streak = 0; });
-    bus.on('player:respawn', () => { this.msgs.textContent = ''; });
+    bus.on('player:respawn', () => {
+      this.msgs.textContent = '';
+      // lembrete grande da loja só nos primeiros segundos de cada vida
+      this.ctaEl.classList.add('show');
+      clearTimeout(this.ctaTimer);
+      this.ctaTimer = window.setTimeout(() => this.ctaEl.classList.remove('show'), 3500);
+    });
   }
 
   private onHit(dmg: number, hs: boolean, killed: boolean): void {
