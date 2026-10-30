@@ -1,6 +1,6 @@
 import { MAX_HP, type Actor } from './Actor';
-import { isSpecialId, SPECIALS, type AnyWeaponId, type SpecialId, type StatusKind } from './special/defs';
-import { ARMOR_ABSORB, canBuy, isShopItem, KILL_REWARD, LADDER, ladderWeapon, PRICE, SHOP_TIERS, START_MONEY, type ShopItemId } from './shop';
+import { isSpecialId, SPECIAL_IDS, SPECIALS, type AnyWeaponId, type SpecialId, type StatusKind } from './special/defs';
+import { ARMOR_ABSORB, canBuy, isShopItem, KILL_REWARD, LADDER, ladderWeapon, PRICE, START_MONEY, type ShopItemId } from './shop';
 import type { WeaponId } from './weaponDefs';
 
 export type V3 = [number, number, number];
@@ -95,6 +95,10 @@ export class Match {
     if (this.host.mode() === 'gungame') {
       const kind = ladderWeapon(a.level);
       this.host.publish({ t: 'special', actor: a.id, kind, ammo: SPECIALS[kind].ammo });
+    } else if (a.isBot) {
+      // Treino: bot também nasce com uma arma maluca (sorteada) em vez da comum
+      const kind = SPECIAL_IDS[Math.floor(Math.random() * SPECIAL_IDS.length)];
+      this.host.publish({ t: 'special', actor: a.id, kind, ammo: SPECIALS[kind].ammo });
     }
   }
 
@@ -118,14 +122,10 @@ export class Match {
     this.host.publish({ t: 'buy', id: a.id, item, money: a.money - PRICE[item] });
   }
 
-  /** Bot: cura/colete quando precisa; arma comum só enquanto a maluca da escada ainda é fraca. */
+  /** Bot: só cura e colete. Fica sempre com a maluca da escada (nunca compra arma comum). */
   private botShop(a: Actor): void {
     if (a.hp < MAX_HP * 0.5) { this.buy(a, 'vida'); return; }
-    if (a.armor <= 0 && this.buyIf(a, 'colete')) return;
-    if (a.special && a.level < 6) {
-      const guns = SHOP_TIERS[0].items.filter((id) => canBuy(a, id) === 'ok' && PRICE[id] > 0).sort((x, y) => PRICE[y] - PRICE[x]).slice(0, 2);
-      if (guns.length) this.buy(a, guns[Math.floor(Math.random() * guns.length)]);
-    }
+    if (a.armor <= 0) this.buyIf(a, 'colete');
   }
 
   private buyIf(a: Actor, item: ShopItemId): boolean {
