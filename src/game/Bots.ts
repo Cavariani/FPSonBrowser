@@ -13,10 +13,10 @@ export interface BotHost {
   fire(shooter: Actor, def: WeaponDef, origin: Vector3, dirs: Vector3[]): void;
   melee(shooter: Actor, def: WeaponDef, origin: Vector3, dir: Vector3, heavy: boolean): boolean;
   /** Armas malucas: o bot "segura/aperta" o gatilho. Chamado todo tick enquanto o bot tem uma. */
-  special(shooter: Actor, dt: number, held: boolean, pressed: boolean, dir: Vector3, altPressed?: boolean): void;
+  special(shooter: Actor, dt: number, held: boolean, pressed: boolean, dir: Vector3): void;
   /** A arma maluca do bot está "ligada" (pipa no ar): o próximo clique recolhe. */
   specialOn(a: Actor): boolean;
-  /** Foi lançado por knockback (rodo/vento): não reassume o controle horizontal no ar. */
+  /** Foi lançado por knockback (vento, explosão): não reassume o controle horizontal no ar. */
   knocked(a: Actor): boolean;
   stunned(a: Actor): boolean;
   blinded(a: Actor): boolean;
@@ -139,7 +139,7 @@ export class BotBrain {
     const def = WEAPONS[a.weapon];
     const stunned = host.stunned(a);
     const blinded = host.blinded(a);
-    let spHeld = false, spPressed = false, spAlt = false;
+    let spHeld = false, spPressed = false;
     this.spCool -= dt;
 
     // Arma maluca no mapa por perto? Vai buscar quando não está brigando.
@@ -189,7 +189,6 @@ export class BotBrain {
         const sp = this.specialCombat(a, dist, onTarget, dt, host.specialOn(a));
         spHeld = sp.held && !stunned;
         spPressed = sp.pressed && !stunned;
-        spAlt = sp.alt && !stunned;
         moveX = sp.approach > 0 ? -Math.sin(a.yaw) : sp.approach < 0 ? Math.sin(a.yaw) : Math.cos(a.yaw) * this.strafe;
         moveZ = sp.approach > 0 ? -Math.cos(a.yaw) : sp.approach < 0 ? Math.cos(a.yaw) : -Math.sin(a.yaw) * this.strafe;
         this.strafeTimer -= dt;
@@ -292,15 +291,15 @@ export class BotBrain {
     }
     if (a.pos.y < -30) a.pos.set(0, 2, 0);
 
-    if (a.special) host.special(a, dt, spHeld, spPressed, aimDir(a.yaw, a.pitch, _aim), spAlt);
+    if (a.special) host.special(a, dt, spHeld, spPressed, aimDir(a.yaw, a.pitch, _aim));
   }
 
   /** Decide se aperta/segura o gatilho da arma maluca e se chega perto ou fica longe. `on`: pipa já está no ar. */
-  private specialCombat(a: Actor, dist: number, onTarget: boolean, dt: number, on: boolean): { held: boolean; pressed: boolean; alt: boolean; approach: number } {
+  private specialCombat(a: Actor, dist: number, onTarget: boolean, dt: number, on: boolean): { held: boolean; pressed: boolean; approach: number } {
     const id = a.special!;
     const loose = onTarget || (Math.abs(wrapAngle(Math.atan2(-_d.x, -_d.z) - a.yaw)) < 0.45);
     const seen = this.seeTime > 0.3;
-    let held = false, pressed = false, alt = false, approach = 0;
+    let held = false, pressed = false, approach = 0;
     const throwIf = (ok: boolean, cdMin: number, cdMax: number) => {
       if (ok && this.spCool <= 0) {
         pressed = held = true;
@@ -338,13 +337,10 @@ export class BotBrain {
         else if (on && dist > 34 && this.spCool <= 0) { pressed = held = true; this.spCool = 1.2; }
         approach = dist > 16 ? 1 : dist < 5 ? -1 : 0;
         break;
-      case 'rodo':
-        approach = dist > 2.1 ? 1 : 0;
-        if (this.spCool <= 0 && dist < 2.7 && onTarget) {
-          if (Math.random() < 0.3) alt = true; else pressed = held = true;
-          this.spCool = alt ? 1.2 : 0.45 + Math.random() * 0.3;
-        }
-        break;
+      // rojão voa reto (com balanço): dispara de média distância e fica longe da explosão
+      case 'rojao': throwIf(dist > 5 && dist < 34 && onTarget && seen, 1.0, 2.0); approach = dist < 7 ? -1 : 0; break;
+      // a galinha corre sozinha atrás do alvo: basta soltar de frente, perto ou meio longe
+      case 'galinha': throwIf(dist > 3 && dist < 24 && loose && seen, 1.2, 2.2); break;
       case 'chinelo': throwIf(dist < 15 && onTarget && seen, 0.6, 1.2); break;
       case 'estilingue':
         if (!this.spCharging) {
@@ -360,7 +356,7 @@ export class BotBrain {
         }
         break;
     }
-    return { held, pressed, alt, approach };
+    return { held, pressed, approach };
   }
 
   private perceive(host: BotHost): void {

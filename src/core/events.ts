@@ -58,7 +58,7 @@ export interface GameEvents {
   'special:catch': { actorId: string; local: boolean };
   /**
    * Uso discreto: arremesso, estilingada, pombo solto, chinelo lançado, chute da bola, pipa solta (kind 'pipa'),
-   * golpe do rodo (kind 'rodo'; `charge` 1 = golpe carregado, 0 = normal).
+   * rojão disparado, galinha solta.
    */
   'special:fire': { actorId: string; local: boolean; kind: SpecialId; origin: Vector3; dir: Vector3; charge?: number };
   /** Estilingue esticando (0..1), a cada frame enquanto segura. */
@@ -79,14 +79,12 @@ export interface GameEvents {
   'special:kite': { actorId: string; local: boolean; on: boolean; origin: Vector3; kite: Vector3; hit: boolean };
   /** GOLAÇO: a bola acertou uma cabeça em velocidade (morte instantânea). Chega a todas as máquinas; `local` = foi você que chutou. */
   'special:golaco': { actorId: string; local: boolean; victimId: string; pos: Vector3; speed: number };
-  /** Rodo: o inimigo lançado espatifou numa parede em alta velocidade. Chega a todas as máquinas. */
-  'special:slam': { victimId: string; byId: string; pos: Vector3; speed: number };
   /** Projétil quicou (speed = velocidade de impacto em m/s). */
   'special:bounce': { kind: ProjKind; pos: Vector3; speed: number };
-  /** Garrafa Dolly ou panela explodiu. */
-  'special:explode': { kind: 'dolly' | 'panela'; pos: Vector3; radius: number };
-  /** Projétil (ou golpe do rodo, kind 'rodo') acertou alguém. Só em quem atirou; o golaço chega a todos com headshot:true. */
-  'special:hit': { kind: ProjKind | 'rodo'; pos: Vector3; victimId: string; headshot: boolean; killed: boolean };
+  /** Garrafa Dolly, panela ou rojão explodiu. */
+  'special:explode': { kind: 'dolly' | 'panela' | 'rojao'; pos: Vector3; radius: number };
+  /** Projétil acertou alguém (galinha: cada bicada). Só em quem atirou; o golaço chega a todos com headshot:true. */
+  'special:hit': { kind: ProjKind; pos: Vector3; victimId: string; headshot: boolean; killed: boolean };
   /** Panela de pressão (ou garrafa Dolly chacoalhando) chiando, a cada ~0.1-0.3 s. progress 0..1 até explodir. */
   'special:hiss': { kind: 'panela' | 'bottle'; pos: Vector3; progress: number };
   /** Efeito de status aplicado em alguém. `local` = é você. */

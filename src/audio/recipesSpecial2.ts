@@ -1,10 +1,10 @@
 import {
-  Sample, addNoise, addTone, addVoice, finalize, loopify, Biquad, VOWELS,
+  Sample, addNoise, addTone, addVoice, addEchoes, finalize, loopify, Biquad, VOWELS,
   type Rng,
 } from './dsp';
 import type { Recipe } from './recipes';
 
-/** Receitas de bola, pipa, rodo, café e hélice picotando. */
+/** Receitas de bola, pipa, rojão, galinha, café e hélice picotando. */
 export const SPECIAL2_RECIPES: Recipe[] = [];
 const add = (name: string, variants: number, build: Recipe['build']) => SPECIAL2_RECIPES.push({ name, variants, build });
 const mk = (sr: number) => (dur: number) => new Sample(sr, dur);
@@ -130,45 +130,61 @@ loopRecipe('cutLoop', 0.6, 0.35, (raw, sr, L, rng) => {
   }
 });
 
-// ------------------------------------------------------------------ rodo
+// ------------------------------------------------------------------ rojão
 
-// "VUUUSH"
-add('rodoSwing', 2, (rng, sr) => {
-  const s = mk(sr)(0.6);
-  addNoise(s, rng, { dur: 0.55, attack: 0.2, decay: 0.15, gain: 1, filters: [{ type: 'bp', f: jit(rng, 250, 0.1), to: 1600, q: 0.9, shape: 'bell' }] });
-  addNoise(s, rng, { dur: 0.5, color: 'brown', attack: 0.15, decay: 0.15, gain: 0.6, filters: [{ type: 'lp', f: 350 }] });
-  addNoise(s, rng, { t: 0.05, dur: 0.4, attack: 0.15, decay: 0.08, gain: 0.12, filters: [{ type: 'hp', f: 4000 }] });
-  return finalize(s, 0.6, 0, 0.1);
+// pavio chiando e "FIUUUU" subindo
+add('rojaoFire', 2, (rng, sr) => {
+  const s = mk(sr)(1.4);
+  addNoise(s, rng, { dur: 0.25, attack: 0.01, decay: 0.08, gain: 0.7, filters: [{ type: 'hp', f: 3500 }] });
+  addTone(s, { t: 0.1, dur: 1.2, f0: jit(rng, 700, 0.1), f1: 3200, pitchTau: 0.5, decay: 0.5, gain: 0.35, vibrato: { rate: 14, depth: 0.03 }, attack: 0.03 });
+  addNoise(s, rng, { t: 0.1, dur: 1.2, attack: 0.05, decay: 0.5, gain: 0.5, filters: [{ type: 'bp', f: 1800, to: 5000, q: 1.2, shape: 'lin' }] });
+  return finalize(s, 0.55, 0, 0.1);
 });
 
-// madeira rangendo na carga do golpe
-add('rodoCharge', 1, (rng, sr) => {
-  const s = mk(sr)(0.42);
-  addTone(s, { dur: 0.38, wave: 'saw', f0: 80, f1: 240, pitchTau: 0.15, decay: 0.3, gain: 0.6, lp: 900, vibrato: { rate: 25, depth: 0.08 }, attack: 0.05 });
-  addNoise(s, rng, { dur: 0.38, attack: 0.1, decay: 0.15, gain: 0.4, filters: [{ type: 'bp', f: 500, to: 1200, q: 2, shape: 'lin' }] });
-  return finalize(s, 0.4, 0, 0.06);
+// "PÁ!" seco e estalinhos de fogos em volta
+add('rojaoBang', 1, (rng, sr) => {
+  const s = mk(sr)(2.0);
+  addNoise(s, rng, { dur: 0.08, attack: 0.0003, decay: 0.012, gain: 1.3, filters: [{ type: 'hp', f: 1800 }] });
+  addTone(s, { dur: 0.6, f0: 120, f1: 45, pitchTau: 0.05, decay: 0.18, gain: 1.2, attack: 0.001 });
+  addNoise(s, rng, { dur: 0.5, color: 'pink', attack: 0.001, decay: 0.1, gain: 0.9, filters: [{ type: 'lp', f: 3800, to: 500, shape: 'fast' }] });
+  for (let k = 0; k < 16; k++) {
+    addNoise(s, rng, { t: 0.12 + k * 0.07 + rng() * 0.05, dur: 0.03, attack: 0.0004, decay: 0.008, gain: 0.3 + rng() * 0.4, filters: [{ type: 'hp', f: 2500 + rng() * 2500 }] });
+  }
+  addEchoes(s, 0.4, [{ d: 0.2, g: 0.3, lp: 1800 }, { d: 0.5, g: 0.18, lp: 1200 }]);
+  return finalize(s, 0.95, 2.2, 0.1);
 });
 
-// "PLAAAC" de madeira pesado
-add('plac', 2, (rng, sr) => {
-  const s = mk(sr)(0.7);
-  addTone(s, { dur: 0.4, f0: 130, f1: 55, pitchTau: 0.02, decay: 0.12, gain: 1.2, attack: 0.001 });
-  addNoise(s, rng, { dur: 0.1, attack: 0.0004, decay: 0.02, gain: 1, filters: [{ type: 'bp', f: jit(rng, 1400, 0.1), q: 1.2 }] });
-  addTone(s, { dur: 0.15, f0: 900, f1: 400, pitchTau: 0.01, decay: 0.04, gain: 0.5, attack: 0.0005 });
-  addTone(s, { dur: 0.2, f0: 2200, decay: 0.06, gain: 0.15, attack: 0.0005 });
-  addNoise(s, rng, { dur: 0.02, attack: 0.0003, decay: 0.01, gain: 0.7, filters: [{ type: 'hp', f: 3500 }] });
-  addNoise(s, rng, { t: 0.03, dur: 0.4, attack: 0.003, decay: 0.1, gain: 0.4, filters: [{ type: 'bp', f: 500, q: 4 }] });
-  return finalize(s, 0.85, 1.8, 0.1);
+// ------------------------------------------------------------------ galinha
+
+// "có-có-có-có-có-CÓÓÓ!"
+add('galinhaFire', 3, (rng, sr, v) => {
+  const m = [1, 1.12, 0.92][v];
+  const s = mk(sr)(1.2);
+  for (let k = 0; k < 5; k++) {
+    addVoice(s, rng, {
+      t: k * 0.13, dur: 0.09, pitch: [[0, 520 * m], [0.4, 700 * m], [1, 480 * m]],
+      vowels: [[0, VOWELS.o], [1, VOWELS.uh]], amp: [[0, 0], [0.15, 1], [0.7, 0.7], [1, 0]], breath: 0.2, jitter: 0.03,
+    });
+  }
+  addVoice(s, rng, {
+    t: 0.7, dur: 0.4, pitch: [[0, 600 * m], [0.3, 950 * m], [1, 700 * m]],
+    vowels: [[0, VOWELS.o], [1, VOWELS.e]], amp: [[0, 0], [0.1, 1], [0.8, 0.8], [1, 0]], breath: 0.15,
+    vibrato: { rate: 30, depth: 0.06 }, jitter: 0.03,
+  });
+  return finalize(s, 0.5, 0, 0.08);
 });
 
-// corpo batendo seco na parede
-add('slam', 2, (rng, sr) => {
-  const s = mk(sr)(0.45);
-  addTone(s, { dur: 0.3, f0: 95, f1: 40, pitchTau: 0.02, decay: 0.09, gain: 1.2, attack: 0.001 });
-  addNoise(s, rng, { dur: 0.2, color: 'pink', attack: 0.001, decay: 0.05, gain: 0.9, filters: [{ type: 'lp', f: 700 }] });
-  addNoise(s, rng, { dur: 0.04, attack: 0.0004, decay: 0.008, gain: 0.8, filters: [{ type: 'bp', f: 1800, q: 1 }] });
-  addNoise(s, rng, { t: 0.02, dur: 0.25, attack: 0.01, decay: 0.07, gain: 0.25, filters: [{ type: 'bp', f: 3500, q: 0.7 }] });
-  return finalize(s, 0.8, 1.5, 0.07);
+// bicada: "toc" + gritinho
+add('galinhaBica', 3, (rng, sr) => {
+  const s = mk(sr)(0.35);
+  addNoise(s, rng, { dur: 0.03, attack: 0.0003, decay: 0.008, gain: 1, filters: [{ type: 'bp', f: 2600, q: 1.2 }] });
+  addTone(s, { dur: 0.08, f0: 320, f1: 160, pitchTau: 0.01, decay: 0.03, gain: 0.7, attack: 0.0005 });
+  addVoice(s, rng, {
+    t: 0.04, dur: 0.2, pitch: [[0, 900], [0.3, 1300], [1, 700]],
+    vowels: [[0, VOWELS.a], [1, VOWELS.ae]], amp: [[0, 0], [0.1, 1], [0.7, 0.6], [1, 0]], breath: 0.25,
+    vibrato: { rate: 28, depth: 0.08 }, jitter: 0.05,
+  });
+  return finalize(s, 0.6, 0, 0.05);
 });
 
 // ------------------------------------------------------------------ café

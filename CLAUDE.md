@@ -37,7 +37,7 @@ Não há testes automatizados.
 
 ## Direção de design (escada de malucas + loja de comuns, implementado)
 
-- **Escada:** 13 malucas, da mais fraca à mais forte (`LADDER` em `src/game/shop.ts`, ordem estimada pelos números, sem playtest). Todo mundo nasce com a do seu nível; 1 kill sobe um nível; quem mata no último nível (Tijolo) vence.
+- **Escada:** 14 malucas, da mais fraca à mais forte (`LADDER` em `src/game/shop.ts`, ordem estimada pelos números, sem playtest). Todo mundo nasce com a do seu nível; 1 kill sobe um nível; quem mata no último nível (Tijolo) vence.
 - **Loja (tecla B, sem rounds):** só armas comuns (faca, pistola, smg, escopeta, fuzil, sniper) e extras (colete, vida cheia, munição das malucas). Malucas NÃO se vendem. Comprar uma comum substitui a maluca na mão até morrer; ao respawnar volta a maluca do nível. Compra validada no host (`Match.buy`, `canBuy`).
 - **Dinheiro:** $500 inicial, $300 por kill (`shop.ts`). Colete absorve 50% do dano até 100 pontos.
 - **Munição das malucas regenera sozinha**, devagar (`regenAmmo` em `Specials.ts`; `REGEN_FULL`/`regen` em `defs.ts`).

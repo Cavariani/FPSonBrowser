@@ -70,19 +70,24 @@ const DEFS: Record<SpecialId, RigDef> = {
     hipPos: [0.19, -0.21, -0.5], hipRot: [0.1, 0.3, 0], right: pose(0.03, 0.03, -0.04, 0.45, 0.32, -1.45),
     left: pose(-0.03, 0.08, -0.2, 0.9, -0.5, 1.5), leftGrip: true,
   },
-  rodo: {
-    // posição de rebatedor: cabo pra cima, por cima do ombro direito
-    hipPos: [0.16, -0.24, -0.42], hipRot: [0.95, 0.25, 0.5], right: pose(0.026, -0.006, 0.01, 0.45, 0.32, -1.45),
-    left: pose(-0.026, -0.006, -0.1, 0.45, -0.32, 1.45), leftGrip: true,
-  },
   cafe: {
     hipPos: [0.2, -0.22, -0.5], hipRot: [0.06, 0.4, 0.04], right: R,
     left: null, leftGrip: false,
   },
+  rojao: {
+    // vara na mão direita, foguete apontando pra frente e um pouco pra cima, pavio aceso perto dos dedos
+    hipPos: [0.17, -0.2, -0.44], hipRot: [0.28, 0.32, 0.02], right: pose(0.0, -0.004, 0.0, 0.45, 0.32, -1.45),
+    left: null, leftGrip: false, thrown: true,
+  },
+  galinha: {
+    // duas mãos segurando a galinha pelo corpo, como o pombo
+    hipPos: [0.03, -0.2, -0.5], hipRot: [0.12, 0.7, 0.0], right: pose(0.09, -0.025, 0.02, 0.55, 0.3, -1.65),
+    left: pose(-0.09, -0.025, 0.02, 0.55, -0.3, 1.65), leftGrip: false, thrown: true,
+  },
 };
 
 const BACK_FEEL: Partial<Record<SpecialId, [number, number]>> = {
-  estilingue: [0.02, 0.06], dolly: [0.0, 0.0], tijolo: [0.0, 0.0],
+  estilingue: [0.02, 0.06], dolly: [0.0, 0.0], tijolo: [0.0, 0.0], rojao: [0.05, 0.03], galinha: [0.01, 0.02],
 };
 
 // ------------------------------------------------------------------ partículas no viewmodel
@@ -270,6 +275,9 @@ export interface Offs {
 }
 
 const rnd = (a: number) => (Math.random() * 2 - 1) * a;
+/** Cores de festa junina (faíscas do rojão). */
+const FESTA = [0xffe080, 0x28ffa8, 0xff4a3a, 0xffd200, 0x2a9bff, 0xff5ad0];
+const pick = <T,>(a: readonly T[]): T => a[(Math.random() * a.length) | 0];
 
 export class SpecialHands {
   /** Filho do holder do ViewModel. */
@@ -290,9 +298,6 @@ export class SpecialHands {
   private active = 0;
   private emitAcc = 0;
   private struggle = 0;
-  /** Rodo: tempo desde o início do golpe e se é o carregado. */
-  private swingT = 99;
-  private swingHeavy = false;
   private readonly offs: Offs = { px: 0, py: 0, pz: 0, rx: 0, ry: 0, rz: 0 };
 
   /** `kick(back, up, side)` → molas de recuo do ViewModel. */
@@ -309,10 +314,6 @@ export class SpecialHands {
       this.catchT = 99;
       const f = BACK_FEEL[e.kind];
       if (f) this.kick(f[0], f[1], 0.02);
-      if (e.kind === 'rodo') {
-        this.swingT = 0;
-        this.swingHeavy = (e.charge ?? 0) > 0.5;
-      }
       if (e.kind === 'estilingue') {
         this.pouchV = -2.2;
         this.charging = false;
@@ -361,7 +362,6 @@ export class SpecialHands {
     this.rig = null;
     this.fx.clear();
     this.leg.visible = false;
-    this.swingT = 99;
     if (!id) return;
     let r = this.rigs.get(id);
     if (!r) this.rigs.set(id, (r = buildRig(id)));
@@ -385,14 +385,6 @@ export class SpecialHands {
   /** Ponto no espaço do pai de `o` → mundo (para lookAt). */
   private toWorldOf(o: THREE.Object3D, p: THREE.Vector3): THREE.Vector3 {
     return _v4.copy(p).applyMatrix4(o.parent!.matrixWorld);
-  }
-
-  /** Rastro de "vento" atrás da cabeça do rodo durante o golpe. */
-  private trail(r: Rig, dt: number, rate: number): void {
-    this.emit(dt, rate, () => {
-      const p = this.world(r.parts.muzzle);
-      this.fx.spawn(p, 0, 0, 0, 0.12, 0.08, 0.02, 0xdff4ff, 0x203040);
-    });
   }
 
   /** Avança animações; devolve offsets para somar no holder. */
@@ -443,6 +435,12 @@ export class SpecialHands {
         o.py += 0.1 * fling;
         o.rx += 0.4 * fling;
         o.py -= 0.2 * follow;
+      } else if (r.id === 'galinha') {
+        // arremesso por baixo, com a galinha esperneando pra frente
+        o.pz -= 0.18 * fling;
+        o.py += 0.04 * fling;
+        o.rx += 0.5 * fling;
+        o.py -= 0.22 * follow;
       } else if (r.id === 'chinelo') {
         // chicotada lateral (frisbee)
         o.px -= 0.18 * fling;
@@ -655,37 +653,45 @@ export class SpecialHands {
         break;
       }
 
-      case 'rodo': {
-        const sw = this.swingT += dt;
-        if (this.swingHeavy) {
-          // prepara (0.3 s) tremendo de força, depois o home run com giro completo
-          const wind = seg(sw, 0, 0.3) * (1 - seg(sw, 0.3, 0.36));
-          const hit = seg(sw, 0.3, 0.4) * (1 - seg(sw, 0.75, 1.1));
-          const thru = seg(sw, 0.4, 0.62) * (1 - seg(sw, 0.75, 1.1));
-          o.rx += 0.3 * wind - 0.9 * hit;
-          o.ry += -0.6 * wind + 1.3 * hit + 1.2 * thru;
-          o.rz += 0.15 * wind - 0.4 * hit;
-          o.px += 0.05 * wind - 0.02 * hit - 0.1 * thru;
-          o.py += 0.05 * wind + 0.12 * hit;
-          o.pz += 0.06 * wind - 0.08 * hit;
-          if (sw < 0.3) { o.px += rnd(0.004) * wind; o.rz += rnd(0.03) * wind; o.py += rnd(0.003) * wind; }
-          if (sw > 0.33 && sw < 0.33 + dt) this.kick(0.0, -0.06, 0.06);
-          if (sw > 0.3 && sw < 0.5) this.trail(r, dtReal, 140);
-        } else {
-          const wind = seg(sw, 0, 0.05) * (1 - seg(sw, 0.05, 0.09));
-          const hit = seg(sw, 0.05, 0.14) * (1 - seg(sw, 0.24, 0.5));
-          o.rx += 0.15 * wind - 0.9 * hit;
-          o.ry += -0.25 * wind + 1.25 * hit;
-          o.rz -= 0.4 * hit;
-          o.py += 0.12 * hit;
-          o.pz -= 0.08 * hit;
-          if (sw > 0.05 && sw < 0.2) this.trail(r, dtReal, 100);
+      case 'rojao': {
+        // a faísca do pavio chia na mão; no disparo, o foguete sai deixando fumaça e faíscas de festa
+        const ig = item.visible ? 1 : 0;
+        P.flame!.visible = item.visible;
+        o.rx += rnd(0.003) * ig;
+        o.rz += rnd(0.003) * ig;
+        if (item.visible) {
+          this.emit(dtReal, 34, () => {
+            const p = this.world(P.flame!);
+            this.fx.spawn(p, rnd(0.25), 0.15 + Math.random() * 0.3, rnd(0.25), 0.28, 0.018, 0.004, pick(FESTA), 0xff4010, 1.2);
+          });
         }
-        if (sw > 1.1) {
-          // parado: "girando o taco" de leve, pronto pro arremesso
-          o.rx += Math.sin(t * 1.4) * 0.02;
-          o.rz += Math.sin(t * 2.1) * 0.03;
+        if (ft < 0.3) {
+          this.emit(dtReal, 120 * (1 - ft / 0.3), () => {
+            const p = this.world(P.muzzle);
+            this.fx.spawn(p, rnd(0.2), rnd(0.2), -0.6 - Math.random() * 0.8, 0.3, 0.05, 0.2, pick(FESTA), 0x303030);
+          });
         }
+        break;
+      }
+
+      case 'galinha': {
+        // a galinha não para quieta: esperneia, as mãos apertam e solta pena
+        const burst = Math.max(0, Math.sin(t * 1.9) * Math.sin(t * 4.1));
+        this.struggle += ((burst > 0.35 ? 1 : 0) - this.struggle) * Math.min(1, dt * 10);
+        const s = this.struggle;
+        item.rotation.z = Math.sin(t * 29) * 0.14 * s;
+        item.rotation.x = Math.sin(t * 21) * 0.08 * s;
+        item.position.y = Math.abs(Math.sin(t * 25)) * 0.014 * s;
+        o.px += Math.sin(t * 27) * 0.004 * s;
+        r.right.position.x -= 0.006 * s;
+        r.left!.position.x += 0.006 * s;
+        if (s > 0.6) {
+          this.emit(dtReal, 5 * s, () => {
+            const p = this.world(P.wingR!);
+            this.fx.spawn(p, rnd(0.35), 0.2, rnd(0.2), 0.55, 0.022, 0.018, 0xe0b070, 0x6a4a28, 0.7);
+          });
+        }
+        r.tick(dt, t, s);
         break;
       }
 
@@ -739,7 +745,7 @@ export class SpecialHands {
         break;
       }
     }
-    if (r.id !== 'pombo') r.tick(dt, t, this.active);
+    if (r.id !== 'pombo' && r.id !== 'galinha') r.tick(dt, t, this.active);
     return o;
   }
 

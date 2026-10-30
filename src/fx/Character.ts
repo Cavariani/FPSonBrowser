@@ -509,9 +509,7 @@ export class CharacterModel {
       const s = Math.sin(Math.min(1, this.swing) * Math.PI);
       o.position.set(0.12 - s * 0.1, -0.12 + s * 0.2, -0.42 - s * 0.25 + this.kick * 0.06);
       const tp = HELD_TP[this.specialId];
-      const base = tp.rx ?? 0;
-      // com item "em pé" (rodo), o golpe vira uma varrida lateral de beisebol
-      o.rotation.set(base + s * (base ? -1.4 : -0.8) - this.kick * 0.2, base ? s * 1.2 : 0, 0);
+      o.rotation.set(s * -0.8 - this.kick * 0.2, 0, 0);
       this.reach(this.armR, _v2.copy(o.position).add(_tmpOff.set(0, 0, 0.04)), k);
       const L = tp.left;
       if (L) {

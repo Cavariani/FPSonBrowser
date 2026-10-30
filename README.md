@@ -2,7 +2,7 @@
 
 Tiroteio multiplayer no navegador, com os amigos.
 
-FPS multiplayer de navegador, low-poly estilizado, com bots. Escada de 13 armas malucas (1 kill sobe um nível, vence quem matar com a última) e loja estilo CS (tecla B) com armas comuns, colete, vida e munição, paga com o dinheiro das kills.
+FPS multiplayer de navegador, low-poly estilizado, com bots. Escada de 14 armas malucas (1 kill sobe um nível, vence quem matar com a última) e loja estilo CS (tecla B) com armas comuns, colete, vida e munição, paga com o dinheiro das kills.
 
 ## Jogar
 

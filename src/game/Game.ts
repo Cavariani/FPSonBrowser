@@ -564,8 +564,6 @@ export class Game {
         this.sp.controlLocal(dt, {
           held: !!playing && inp.mouseDown(0) && !this.player.sprinting,
           pressed: !!playing && inp.mousePressed(0) && !this.player.sprinting,
-          alt: !!playing && inp.mouseDown(2),
-          altPressed: !!playing && inp.mousePressed(2) && !this.player.sprinting,
         });
       } else {
         this.weapons.update(
@@ -715,8 +713,8 @@ export class Game {
         world: this.world,
         actors: () => this.actors.values(),
         difficulty: () => settings.botDifficulty,
-        special: (a: Actor, d: number, held: boolean, pressed: boolean, dir: THREE.Vector3, altPressed = false) =>
-          this.sp.controlBot(a, d, { held, pressed, altPressed }, dir),
+        special: (a: Actor, d: number, held: boolean, pressed: boolean, dir: THREE.Vector3) =>
+          this.sp.controlBot(a, d, { held, pressed }, dir),
         specialOn: (a: Actor) => this.sp.isOn(a),
         knocked: (a: Actor) => !!this.sp.status.pushOf(a.id),
         stunned: (a: Actor) => this.sp.status.has(a.id, 'stun'),

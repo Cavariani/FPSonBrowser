@@ -68,12 +68,16 @@ const FEATHER = [0xffffff, 0xe8ecf4, 0xc9d0dc, 0xa8b0c0];
 const DROP = [0xd8802c, 0xe89a44, 0xff6a96, 0xf2c27a];
 const BEAN = [0x2b160c, 0x3f2212, 0x5a3418, 0x1c0e08, 0x6b4020];
 const CONFETTI = [0x2fe05a, 0xffd200, 0xffffff, 0x2a9bff, 0x2fe05a, 0xffd200];
-const PLASTER = [0xd8c8a8, 0xc8b490, 0xe8dcc4, 0xa89878];
 const RED_BITS = [0xd8342c, 0xb8241e, 0x8e1a16];
 const CLOTH = [0x3a5a8a, 0x5a6a3a, 0xe8e0d0, 0x2a2a2e];
 const COFFEE = [0x4a2a12, 0x5a3418, 0x3a1e0c];
 const RICE = [0xf6f2e4, 0xffffff, 0xece4cc];
 const LEAF = [0x6a8a3a, 0x8aa040, 0xa08040, 0xc8b070, 0x5a6a30];
+/** Penas da galinha da vovó. */
+const HEN_FEATHER = [0xe0b070, 0xc58a4a, 0xf2d8a0, 0x8c5a2a];
+/** Fogos de festa junina (rojão): verde-bandeira, vermelho, amarelo, azul e rosa. */
+const FESTA = [0x28ffa8, 0xff4a3a, 0xffd200, 0x2a9bff, 0xff5ad0];
+const FESTA_BITS = [0x28ffa8, 0xff4a3a, 0xffd200, 0x2a9bff, 0xff5ad0, 0xffffff, 0xffd200];
 
 let _net: THREE.BufferGeometry | null = null;
 /** Rede do gol (grade de linhas abaulada, 2x1.3, normal +Z). */
@@ -104,39 +108,6 @@ function netGeo(): THREE.BufferGeometry {
   return _net;
 }
 
-let _crack: THREE.BufferGeometry | null = null;
-/** Rachadura: raios quebrados saindo do centro (triângulos finos, normal +Z). */
-function crackGeo(): THREE.BufferGeometry {
-  if (_crack) return _crack;
-  const v: number[] = [];
-  let seed = 3;
-  const R = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
-  const seg = (x0: number, y0: number, x1: number, y1: number, w: number) => {
-    const dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1;
-    const nx = (-dy / l) * w, ny = (dx / l) * w;
-    v.push(x0 + nx, y0 + ny, 0, x0 - nx, y0 - ny, 0, x1, y1, 0);
-  };
-  for (let k = 0; k < 9; k++) {
-    let a = (k / 9) * Math.PI * 2 + R() * 0.5, x = 0, y = 0, w = 0.05;
-    for (let s = 0; s < 4; s++) {
-      a += (R() - 0.5) * 0.9;
-      const l = 0.12 + R() * 0.16;
-      const nx = x + Math.cos(a) * l, ny = y + Math.sin(a) * l;
-      seg(x, y, nx, ny, w);
-      if (R() < 0.4) seg(nx, ny, nx + Math.cos(a + 1) * l * 0.6, ny + Math.sin(a + 1) * l * 0.6, w * 0.5);
-      x = nx; y = ny; w *= 0.7;
-    }
-  }
-  // buraco no meio
-  for (let i = 0; i < 7; i++) {
-    const a0 = (i / 7) * Math.PI * 2, a1 = ((i + 1) / 7) * Math.PI * 2, r = 0.09 + R() * 0.05;
-    v.push(0, 0, 0, Math.cos(a0) * r, Math.sin(a0) * r, 0, Math.cos(a1) * r, Math.sin(a1) * r, 0);
-  }
-  _crack = new THREE.BufferGeometry();
-  _crack.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
-  return _crack;
-}
-
 export class SpecialFX {
   private additive: QuadPool;
   private soft: QuadPool;
@@ -150,7 +121,7 @@ export class SpecialFX {
   private columns: { mesh: THREE.Mesh; t: number; kind: 'dolly' | 'panela' | 'ring' }[] = [];
   private colGeo = new THREE.CylinderGeometry(1, 1, 1, 14, 1, true);
   private ringGeo = new THREE.RingGeometry(0.6, 1, 28).rotateX(-Math.PI / 2);
-  /** Decalques temporários (rede do golaço, rachadura do rodo) que encaram a câmera na hora em que nascem. */
+  /** Decalques temporários (rede do golaço) que encaram a câmera na hora em que nascem. */
   private stamps: { mesh: THREE.Object3D; mat: THREE.Material & { opacity: number }; t: number; life: number; pop: number; base: number }[] = [];
 
   // arma na mão (1ª pessoa)
@@ -300,27 +271,19 @@ export class SpecialFX {
       }
     });
 
-    bus.on('special:slam', (e) => {
-      // espatifou na parede: rachadura, reboco caindo, poeira grossa e estrelinhas
-      const k = Math.min(1.6, 0.6 + e.speed / 25);
-      this.flashAt(e.pos, 0xffe0b0, 2 * k);
-      this.stamp(_a.copy(e.pos).setY(e.pos.y + 1.0), crackGeo(), 0x1a1410, 1.4 * k, 0, 6, 0.0);
-      for (let i = 0; i < 12; i++) this.puff(_b.copy(e.pos).setY(e.pos.y + rr(0.2, 1.6)), 0xcdbfa8, 1.1 * k, 1.2);
-      const gy = this.host.groundY(e.pos.x, e.pos.y, e.pos.z);
-      for (let i = 0; i < 26; i++) {
-        this.chunks.spawn(e.pos.x + rnd(0.4), e.pos.y + rr(0.4, 1.8), e.pos.z + rnd(0.4), rnd(4), rr(1, 5), rnd(4), pick(PLASTER), {
-          life: rr(1.5, 3), sx: rr(0.05, 0.14), sy: rr(0.03, 0.08), sz: rr(0.05, 0.14), gravity: 16, floor: gy + 0.03, spin: 12, shrink: 0.2,
-        });
-      }
-      this.sparkle(_a.copy(e.pos).setY(e.pos.y + 1.6), 0xffe14a, 14, 4);
-    });
-
     bus.on('special:fire', (e) => {
       if (e.kind === 'bola') {
         this.puff(e.origin, 0xd8d0c0, 0.4, 0.5);
         this.sparkle(e.origin, 0xffffff, 6, 3);
-      } else if (e.kind === 'rodo') {
-        for (let i = 0; i < 5; i++) this.puff(_a.copy(e.origin).addScaledVector(e.dir, rr(0.4, 1.8)), 0xdde8f0, 0.35, 0.4);
+      } else if (e.kind === 'rojao') {
+        // largada do foguete: fumaça cinza e faíscas de festa no pavio
+        for (let i = 0; i < 4; i++) this.puff(e.origin, 0xb8b8b8, 0.45, 0.7);
+        for (let i = 0; i < 10; i++) this.additive.spawn(e.origin.x, e.origin.y, e.origin.z, e.dir.x * 3 + rnd(2), e.dir.y * 3 + rnd(2), e.dir.z * 3 + rnd(2), {
+          life: rr(0.25, 0.5), size0: rr(0.1, 0.18), size1: 0.02, c0: pick(FESTA), c1: 0xff4010, alpha: 1, drag: 1.5,
+        });
+      } else if (e.kind === 'galinha') {
+        // "cocóóó!": a galinha sai voando da mão deixando penas
+        for (let i = 0; i < 6; i++) this.feather(e.origin, 2, HEN_FEATHER);
       } else if (e.kind === 'pipa') {
         this.sparkle(e.origin, 0xe040f0, 10, 3);
       } else if (e.kind === 'pombo') {
@@ -336,16 +299,13 @@ export class SpecialFX {
 
     bus.on('special:hit', (e) => {
       if (e.kind === 'pombo') for (let i = 0; i < 16; i++) this.feather(e.pos, 3);
-      else if (e.kind === 'chinelo') this.sparkle(e.pos, 0xffd200, 14, 5);
+      else if (e.kind === 'galinha') {
+        // bicada: nuvem de penas e uma faiscadinha amarela
+        for (let i = 0; i < 12; i++) this.feather(e.pos, 3.5, HEN_FEATHER);
+        this.sparkle(e.pos, 0xf2a020, 6, 3);
+      } else if (e.kind === 'chinelo') this.sparkle(e.pos, 0xffd200, 14, 5);
       else if (e.kind === 'bola') this.sparkle(e.pos, 0xa6ee2f, 10, 4);
-      else if (e.kind === 'rodo') {
-        this.flashAt(e.pos, 0xffffff, 1.6);
-        this.sparkle(e.pos, 0x1fe58a, 14, 5);
-        // respingo de água do rodo
-        for (let i = 0; i < 14; i++) {
-          this.additive.spawn(e.pos.x, e.pos.y, e.pos.z, rnd(4), rr(1, 4), rnd(4), { life: rr(0.3, 0.6), size0: 0.1, size1: 0.03, c0: 0xcfeeff, c1: 0x3a8cff, alpha: 0.9, gravity: 12 });
-        }
-      } else if (e.kind === 'brick' && e.headshot) {
+      else if (e.kind === 'brick' && e.headshot) {
         // BONK: estrelinhas
         this.flashAt(e.pos, 0xffe14a, 1.6);
         for (let i = 0; i < 10; i++) {
@@ -379,7 +339,7 @@ export class SpecialFX {
       }
     });
 
-    bus.on('special:explode', (e) => (e.kind === 'dolly' ? this.geyser(e.pos, e.radius) : this.beans(e.pos, e.radius)));
+    bus.on('special:explode', (e) => (e.kind === 'dolly' ? this.geyser(e.pos, e.radius) : e.kind === 'rojao' ? this.fireworks(e.pos, e.radius) : this.beans(e.pos, e.radius)));
 
     bus.on('status:apply', (e) => {
       if (e.local && e.kind === 'blind') this.overlay.newSplat();
@@ -419,9 +379,9 @@ export class SpecialFX {
     });
   }
 
-  private feather(p: THREE.Vector3, speed: number): void {
+  private feather(p: THREE.Vector3, speed: number, palette: readonly number[] = FEATHER): void {
     const gy = this.host.groundY(p.x, p.y, p.z);
-    this.chunks.spawn(p.x, p.y, p.z, rnd(speed), rr(0.5, 2.2), rnd(speed), pick(FEATHER), {
+    this.chunks.spawn(p.x, p.y, p.z, rnd(speed), rr(0.5, 2.2), rnd(speed), pick(palette), {
       life: rr(1.6, 2.8), sx: 0.07, sy: 0.012, sz: 0.13, gravity: 8, floor: gy + 0.02, flutter: true, spin: 6, shrink: 0.35,
     });
   }
@@ -538,6 +498,47 @@ export class SpecialFX {
       const a = Math.random() * 6.28, sp = rr(0, 5);
       this.soft.spawn(p.x, p.y + 0.3, p.z, Math.cos(a) * sp, rr(1, 5), Math.sin(a) * sp, {
         life: rr(0.8, 1.6), size0: 0.5, size1: rr(1.6, 3), c0: 0xffffff, c1: 0xcfd6dc, alpha: 0.6, drag: 1.4, hold: 0.3,
+      });
+    }
+  }
+
+  /** Estouro do rojão: bola de fogos colorida, chuva de confete e fumaça de pólvora (sem clarão branco na tela). */
+  private fireworks(p: THREE.Vector3, radius: number): void {
+    const gy = this.host.groundY(p.x, p.y, p.z);
+    this.flashAt(_a.set(p.x, p.y + 0.2, p.z), 0xffd890, 3.2);
+    this.ring(p, 0x28ffa8, radius, 0.5);
+    // bola de fogos: faíscas em todas as direções, cada uma de uma cor, caindo devagar
+    for (let i = 0; i < 80; i++) {
+      const u = Math.random() * 2 - 1, a = Math.random() * 6.28, r = Math.sqrt(1 - u * u), sp = rr(5, 11) * (0.55 + radius / 12);
+      const c = pick(FESTA);
+      this.additive.spawn(p.x, p.y + 0.3, p.z, Math.cos(a) * r * sp, u * sp + 2, Math.sin(a) * r * sp, {
+        life: rr(0.7, 1.4), size0: rr(0.2, 0.34), size1: 0.03, c0: c, c1: c, alpha: 1, gravity: 5, drag: 1.4,
+      });
+    }
+    // brilho de prata caindo (efeito de "chuva de prata")
+    for (let i = 0; i < 28; i++) {
+      this.additive.spawn(p.x + rnd(1.2), p.y + rr(0.5, 2.2), p.z + rnd(1.2), rnd(1.5), rr(0.5, 3), rnd(1.5), {
+        life: rr(1, 1.8), size0: 0.12, size1: 0.02, c0: 0xfff0b0, c1: 0xffa030, alpha: 1, gravity: 2.5, drag: 1,
+      });
+    }
+    // confete e papelão do tubo
+    for (let i = 0; i < 70; i++) {
+      const a = Math.random() * 6.28, sp = rr(2, 9);
+      this.chunks.spawn(p.x, p.y + 0.3, p.z, Math.cos(a) * sp, rr(3, 11), Math.sin(a) * sp, pick(FESTA_BITS), {
+        life: rr(1.8, 3), sx: 0.07, sy: 0.012, sz: 0.1, gravity: 9, floor: gy + 0.02, flutter: true, spin: 10, shrink: 0.3,
+      });
+    }
+    for (let i = 0; i < 10; i++) {
+      const a = Math.random() * 6.28, sp = rr(2, 8);
+      this.chunks.spawn(p.x, p.y + 0.2, p.z, Math.cos(a) * sp, rr(4, 10), Math.sin(a) * sp, i % 2 ? 0xd8342c : 0xc9a46c, {
+        life: rr(1.2, 2.2), sx: 0.06, sy: 0.04, sz: 0.1, gravity: 18, floor: gy + 0.03, spin: 14, shrink: 0.3,
+      });
+    }
+    // fumaça de pólvora
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * 6.28, sp = rr(0, 4);
+      this.soft.spawn(p.x, p.y + 0.3, p.z, Math.cos(a) * sp, rr(0.6, 3), Math.sin(a) * sp, {
+        life: rr(0.8, 1.6), size0: 0.5, size1: rr(1.6, 2.6), c0: 0x8a8a8a, c1: 0x3a3a3a, alpha: 0.45, drag: 1.4, hold: 0.3,
       });
     }
   }

@@ -7,6 +7,7 @@ import { END_NAME, type EndReason, type SpecialMsg } from './msgs';
 
 const V = THREE.Vector3;
 const _a = new V(), _b = new V(), _c = new V(), _step = new V(), _dir = new V(), _ax = new V();
+const UP = new V(0, 1, 0), DOWN = new V(0, -1, 0);
 
 interface PhysDef {
   /** Raio de colisão. */
@@ -29,6 +30,9 @@ const PH: Record<ProjKind, PhysDef> = {
   bola: { r: SPECIALS.bola.p.radius, g: SPECIALS.bola.p.g, e: SPECIALS.bola.p.e, maxBounce: SPECIALS.bola.p.maxBounce, life: SPECIALS.bola.p.life, tumble: 7 },
   pombo: { r: 0.3, g: 0, e: 0, maxBounce: 0, life: SPECIALS.pombo.p.life, tumble: 0 },
   chinelo: { r: SPECIALS.chinelo.p.radius, g: 0, e: 0, maxBounce: 0, life: 7, tumble: 0 },
+  // rojão: quem atirou estoura no fim do pavio (p.life); os outros esperam a mensagem `pe` um pouco mais
+  rojao: { r: 0.2, g: 0, e: 0, maxBounce: 0, life: SPECIALS.rojao.p.life + 1.5, tumble: 0 },
+  galinha: { r: SPECIALS.galinha.p.radius, g: 0, e: 0, maxBounce: 0, life: SPECIALS.galinha.p.life, tumble: 0 },
 };
 
 const FUSE: Partial<Record<ProjKind, number>> = { bottle: SPECIALS.dolly.p.fuse, panela: SPECIALS.panela.p.fuse };
@@ -199,7 +203,7 @@ export class ProjectileSim {
 
   /** Projéteis simulados aqui que precisam mandar posição (`pu`): teleguiados (pombo, chinelo) e a bola. */
   guidedOf(): Proj[] {
-    return this.list.filter((p) => p.auth && !p.ended && (p.kind === 'pombo' || p.kind === 'chinelo' || p.kind === 'bola'));
+    return this.list.filter((p) => p.auth && !p.ended && (p.kind === 'pombo' || p.kind === 'chinelo' || p.kind === 'bola' || p.kind === 'galinha'));
   }
 
   end(p: Proj, why: EndReason): void {
@@ -222,6 +226,8 @@ export class ProjectileSim {
       switch (p.kind) {
         case 'pombo': this.stepPombo(p, dt); break;
         case 'chinelo': this.stepChinelo(p, dt); break;
+        case 'rojao': this.stepRojao(p, dt); break;
+        case 'galinha': this.stepGalinha(p, dt); break;
         default: this.stepBallistic(p, dt);
       }
       p.travel += p.pos.distanceTo(p.prev);
@@ -239,7 +245,12 @@ export class ProjectileSim {
       m.position.lerpVectors(p.prev, p.pos, alpha);
       switch (p.kind) {
         case 'pombo':
+        case 'galinha':
           if (p.vel.lengthSq() > 0.01) m.lookAt(_a.copy(m.position).add(p.vel));
+          break;
+        case 'rojao':
+          // aponta pra onde está indo de fato (com o balanço)
+          if (p.pos.distanceToSquared(p.prev) > 1e-8) m.lookAt(_a.copy(m.position).add(_b.subVectors(p.pos, p.prev)));
           break;
         case 'chinelo':
           m.rotation.set(0, p.age * 22, 0);
@@ -421,8 +432,7 @@ export class ProjectileSim {
     p.pos.addScaledVector(_dir, len);
   }
 
-  private acquire(p: Proj): Actor | undefined {
-    const P = SPECIALS.pombo.p;
+  private acquire(p: Proj, P: Record<string, number> = SPECIALS.pombo.p): Actor | undefined {
     const fwd = _c.copy(p.vel).normalize();
     let best: Actor | undefined, bs = Infinity;
     for (const a of this.host.actors()) {
@@ -485,6 +495,89 @@ export class ProjectileSim {
     }
     p.pos.addScaledVector(_dir, len);
     if (p.age > 6.5) this.end(p, 'caught');
+  }
+
+  /** Rojão: voa reto com balanço lateral determinístico (todas as máquinas simulam igual); só o dono colide e estoura. */
+  private stepRojao(p: Proj, dt: number): void {
+    const P = SPECIALS.rojao.p;
+    _dir.copy(p.vel).normalize();
+    _ax.crossVectors(_dir, UP);
+    if (_ax.lengthSq() < 1e-6) _ax.set(1, 0, 0);
+    _ax.normalize();
+    // derivada de wobble*sin(freq*t): velocidade lateral do balanço
+    const lat = P.wobble * P.freq * Math.cos(P.freq * p.age);
+    _step.copy(p.vel).addScaledVector(_ax, lat).multiplyScalar(dt);
+    const len = _step.length();
+    if (!p.auth) { p.pos.add(_step); return; }
+    if (p.age >= P.life) { this.end(p, 'explode'); return; }
+    _dir.copy(_step).divideScalar(len || 1);
+    const wh = this.host.world.raycast(p.pos, _dir, len + 0.2);
+    const hit = this.sweep(p, p.pos, _dir, len, P.hitR);
+    if (hit && (!wh || wh.dist - 0.2 > hit.t - 0.05)) {
+      p.pos.copy(hit.point);
+      if (this.host.hit(p, hit.actor, hit.head, hit.point)) { this.end(p, 'hit'); return; }
+    }
+    if (wh) {
+      p.pos.addScaledVector(_dir, Math.max(0, wh.dist - 0.2));
+      this.end(p, 'world');
+      return;
+    }
+    p.pos.add(_step);
+  }
+
+  /** Galinha: corre no chão atrás do inimigo mais perto e bica ao encostar (pular por cima desvia). */
+  private stepGalinha(p: Proj, dt: number): void {
+    if (!p.auth) { this.stepGuided(p, dt); return; }
+    const P = SPECIALS.galinha.p;
+    const world = this.host.world;
+
+    let tgt = p.target ? this.host.getActor(p.target) : undefined;
+    if (tgt && !tgt.alive) { tgt = undefined; p.target = null; }
+    p.acqT -= dt;
+    if (!tgt && p.acqT <= 0) {
+      p.acqT = 0.3;
+      tgt = this.acquire(p, P);
+      p.target = tgt ? tgt.id : null;
+    }
+    p.vel.y = 0;
+    if (tgt) {
+      _b.set(tgt.pos.x - p.pos.x, 0, tgt.pos.z - p.pos.z);
+      steer(p.vel, _b, P.turn * dt);
+    }
+    p.vel.y = 0;
+    p.vel.setLength(P.speed);
+
+    // bicadas: quem a galinha encosta (o corpo precisa alcançar a altura dela: pular desvia)
+    p.hissT -= dt;
+    if (p.hissT <= 0) {
+      for (const a of this.host.actors()) {
+        if (a.id === p.owner || !a.alive) continue;
+        if (!contact(a, _c.set(p.pos.x, p.pos.y + 0.4, p.pos.z), P.radius)) continue;
+        this.host.hit(p, a, false, _c.set(a.pos.x, a.pos.y + a.height * 0.45, a.pos.z));
+        p.hissT = P.peckCd;
+        if (++p.bounces >= P.pecks) { this.end(p, 'hit'); return; }
+        break;
+      }
+    }
+
+    // para de andar em cima do alvo (senão atravessa)
+    if (tgt && Math.hypot(tgt.pos.x - p.pos.x, tgt.pos.z - p.pos.z) < 0.5) return;
+    const len = P.speed * dt;
+    _dir.copy(p.vel).normalize();
+    // degrau baixo a galinha sobe; parede alta trava (e some se ficar presa)
+    const wall = world.raycast(_a.set(p.pos.x, p.pos.y + 0.15, p.pos.z), _dir, len + 0.45);
+    const climb = wall && !world.raycast(_a.set(p.pos.x, p.pos.y + 1.0, p.pos.z), _dir, len + 0.45);
+    if (wall && !climb) {
+      p.backT += dt;
+      if (p.backT > 0.8) this.end(p, 'world');
+      return;
+    }
+    p.backT = 0;
+    const nx = p.pos.x + _dir.x * len, nz = p.pos.z + _dir.z * len;
+    const gh = world.raycast(_a.set(nx, p.pos.y + 1.0, nz), DOWN, 3.5);
+    p.pos.x = nx;
+    p.pos.z = nz;
+    p.pos.y = gh ? gh.point.y + 0.22 : p.pos.y - 9 * dt;
   }
 
   private switchBack(p: Proj): void {

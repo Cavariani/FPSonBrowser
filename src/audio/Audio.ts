@@ -561,13 +561,6 @@ export class AudioSystem {
       this.play('crowd', { ...o, delay: 0.25, vol: 0.9, rateVar: 0 });
     });
 
-    // --- Rodo: o inimigo espatifou na parede
-    bus.on('special:slam', (e) => {
-      this.remember(e.victimId, e.pos);
-      const v = clamp(e.speed / 30, 0.5, 1.3);
-      this.play('slam', { pos: e.pos, ref: 10, rolloff: 0.9, maxDist: 200, prio: 4, vol: v, rate: 1.1 - 0.2 * clamp(v - 0.5, 0, 1), wet: 0.2, wetDist: true });
-    });
-
     // --- Estilingue esticando: pitch sobe com a carga
     bus.on('special:charge', (e) => {
       const id = who(e.local, e.actorId);
@@ -601,15 +594,8 @@ export class AudioSystem {
         case 'chinelo': this.play('chineloFwip', base); break;
         case 'bola': this.play('kick', { ...base, vol: 1.1 }); break;
         case 'pipa': this.play('reel', base); break;
-        case 'rodo':
-          if ((e.charge ?? 0) > 0.5) {
-            // golpe carregado: o evento sai no início da carga; a pancada vem ~0.3 s depois
-            this.play('rodoCharge', base);
-            this.play('rodoSwing', { ...base, delay: 0.3, rate: 0.8, vol: 1.1 });
-          } else {
-            this.play('rodoSwing', base);
-          }
-          break;
+        case 'rojao': this.play('rojaoFire', base); break;
+        case 'galinha': this.play('galinhaFire', base); break;
         default: break;
       }
     });
@@ -623,7 +609,7 @@ export class AudioSystem {
     });
 
     bus.on('special:explode', (e) => {
-      this.play(e.kind === 'dolly' ? 'dollyBoom' : 'panelaBang', {
+      this.play(e.kind === 'dolly' ? 'dollyBoom' : e.kind === 'rojao' ? 'rojaoBang' : 'panelaBang', {
         pos: e.pos, ref: 14, rolloff: 0.9, maxDist: 300, prio: 4, wet: 0.4, wetDist: true, hrtf: true, lpScale: 70, rateVar: 0.04,
       });
     });
@@ -637,7 +623,7 @@ export class AudioSystem {
         case 'pombo': this.play('pomboHit', o); break;
         case 'chinelo': this.play('plaft', o); break;
         case 'panela': this.play('clang', o); break;
-        case 'rodo': this.play('plac', e.killed ? { ...o, vol: 1.2, rate: 0.9 } : o); break;
+        case 'galinha': this.play('galinhaBica', o); break;
         case 'bola': if (!e.headshot) this.play('kick', { ...o, vol: 0.6, rate: 1.3 }); break;
         default: break;
       }

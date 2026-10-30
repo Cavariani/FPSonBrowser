@@ -608,9 +608,9 @@ export class Net implements NetLink {
         r.dmg = Math.max(0, Math.min(r.dmg, 300));
         // Só o próprio atirador pede dano... exceto queda depois de empurrão: quem pede é a vítima (dir zerado)
         const ownShot = r.attacker === p.actorId;
-        // (ventilador: queda; rodo: queda ou pancada na parede, que pode passar de 150)
-        const pushFall = r.victim === p.actorId && r.attacker !== r.victim && (r.weapon === 'ventilador' || r.weapon === 'rodo')
-          && r.dir[0] === 0 && r.dir[1] === 0 && r.dir[2] === 0 && r.dmg <= (r.weapon === 'rodo' ? 260 : 150);
+        // (ventilador: queda)
+        const pushFall = r.victim === p.actorId && r.attacker !== r.victim && r.weapon === 'ventilador'
+          && r.dir[0] === 0 && r.dir[1] === 0 && r.dir[2] === 0 && r.dmg <= 150;
         if (!ownShot && !pushFall) return;
         this.game.hostApplyDamage(r);
         break;

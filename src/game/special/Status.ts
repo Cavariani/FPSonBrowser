@@ -6,7 +6,7 @@ interface Rec {
   blind: number; blindDur: number;
   stun: number;
   steam: number;
-  /** "Empurrado": queda (ou parede, no rodo) dentro da janela conta como kill de quem empurrou. */
+  /** "Empurrado": queda dentro da janela conta como kill de quem empurrou. */
   pushT: number; pushBy: string; pushW: SpecialId | null;
 }
 

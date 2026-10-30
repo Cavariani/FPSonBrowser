@@ -5,11 +5,11 @@ import type { WeaponDef, WeaponId } from '../weaponDefs';
 export type SpecialId =
   | 'lorenzetti' | 'estilingue' | 'dolly' | 'rexona' | 'pombo'
   | 'chinelo' | 'panela' | 'ventilador' | 'tijolo'
-  | 'bola' | 'pipa' | 'rodo' | 'cafe';
+  | 'bola' | 'pipa' | 'cafe' | 'rojao' | 'galinha';
 
 export const SPECIAL_IDS: SpecialId[] = [
   'lorenzetti', 'estilingue', 'dolly', 'rexona', 'pombo', 'chinelo', 'panela', 'ventilador', 'tijolo',
-  'bola', 'pipa', 'rodo', 'cafe',
+  'bola', 'pipa', 'cafe', 'rojao', 'galinha',
 ];
 
 /** Qualquer arma que pode aparecer em dano/kill: as do gun game + as malucas. */
@@ -21,12 +21,12 @@ export const isSpecialId = (w: string): w is SpecialId => (SPECIAL_IDS as string
 export type StatusKind = 'burn' | 'shock' | 'blind' | 'stun' | 'steam';
 
 /** Projéteis físicos. */
-export type ProjKind = 'stone' | 'bottle' | 'brick' | 'panela' | 'bola' | 'pombo' | 'chinelo';
+export type ProjKind = 'stone' | 'bottle' | 'brick' | 'panela' | 'bola' | 'pombo' | 'chinelo' | 'rojao' | 'galinha';
 
 /** Armas de raio/jato contínuo (segurar o botão). */
 export type BeamKind = 'lorenzetti' | 'rexona' | 'ventilador' | 'cafe';
 
-export type SpecialStyle = 'beam' | 'charge' | 'throw' | 'flame' | 'homing' | 'boomerang' | 'wind' | 'kick' | 'kite' | 'melee' | 'jet';
+export type SpecialStyle = 'beam' | 'charge' | 'throw' | 'flame' | 'homing' | 'boomerang' | 'wind' | 'kick' | 'kite' | 'jet';
 
 export interface SpecialDef {
   id: SpecialId;
@@ -116,20 +116,23 @@ export const SPECIALS: Record<SpecialId, SpecialDef> = {
     // len: comprimento da linha; bias: a pipa fica um pouco acima da mira (rad); follow: agilidade do atraso (1/s).
     p: { len: 22, bias: 0.07, follow: 5.5, launchT: 0.6, launchLift: 0.5, dps: 150, tick: 0.1, reach: 0.45, cd: 0.35 },
   },
-  rodo: {
-    id: 'rodo', name: 'Rodo', short: 'RODO', hint: 'Clique: golpe. Direito: carregado. Home run!',
-    style: 'melee', ammo: 12, unit: 'shot', color: 0x28ffa8,
-    // Home run: o knockback marca a vítima (kill de quem bateu se ela espatifa na parede em alta velocidade ou cai).
-    p: {
-      range: 2.8, cone: 0.7, dmg: 60, knock: 24, up: 6.5, cd: 0.45,
-      hRange: 3.2, hCone: 0.8, hDmg: 110, hKnock: 38, hUp: 9, windup: 0.3, hCd: 0.95, hCost: 2,
-      fallT: 4.5, slamMin: 11, slamLoss: 8, slamBase: 8, slamMul: 13, slamMax: 260,
-    },
-  },
   cafe: {
     id: 'cafe', name: 'Garrafa Térmica de Café', short: 'CAFÉ', hint: 'Segure para jorrar café fervendo',
     style: 'jet', ammo: 6, unit: 'sec', color: 0xff8a1f,
     p: { range: 9, cone: 0.27, dps: 90, tick: 0.1, burn: 3.5, burnDps: 16, steam: 2.0 },
+  },
+  rojao: {
+    id: 'rojao', name: 'Rojão de Festa Junina', short: 'ROJÃO', hint: 'Voa zigue-zagueando e estoura em área',
+    style: 'throw', ammo: 5, unit: 'shot', color: 0x28ffa8,
+    // Voa reto com um balanço lateral (wobble m, freq rad/s). Estoura no contato, na parede ou ao fim do pavio (life s).
+    // Explosão como a da panela: dmg no centro, dmgMin na borda; quem atira leva só o knockback (rojão jump).
+    p: { speed: 36, wobble: 1.1, freq: 7, life: 2.6, hitR: 0.35, radius: 5.5, dmg: 140, dmgMin: 40, knock: 15, up: 9, cd: 0.7 },
+  },
+  galinha: {
+    id: 'galinha', name: 'Galinha da Vovó', short: 'GALINHA', hint: 'Solta uma galinha que corre atrás e bica',
+    style: 'homing', ammo: 6, unit: 'shot', color: 0xc58a4a,
+    // Corre no chão atrás do inimigo mais próximo (speed m/s, turn rad/s). Ao encostar, bica `pecks` vezes (dmg cada, a cada peckCd s).
+    p: { speed: 9.5, turn: 5.5, life: 8, acquire: 28, acquireCone: 2.4, radius: 0.55, dmg: 46, pecks: 3, peckCd: 0.4, cd: 0.9 },
   },
 };
 

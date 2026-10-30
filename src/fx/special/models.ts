@@ -51,6 +51,13 @@ const C = {
   foot: 0xd86a6a,
   green: 0x2fb35a,
   havaYellow: 0xffd200,
+  hen: 0xc58a4a,
+  henLight: 0xe0b070,
+  henDark: 0x8c5a2a,
+  henTail: 0x3a2a1a,
+  comb: 0xe02a2a,
+  henBeak: 0xf2a020,
+  tape: 0xe8d8a8,
 };
 
 /** Peças animáveis do item na mão. */
@@ -550,23 +557,6 @@ function pipa(): { g: THREE.Group; p: HeldParts } {
   return { g, p: { muzzle: anchor(g, 0, 0.11, -0.1), reel, line } };
 }
 
-/** Rodo: cabo comprido de madeira (para -Z) e cabeça com borracha preta. Origem = mão direita na ponta do cabo. */
-function rodo(): { g: THREE.Group; p: HeldParts } {
-  const g = new THREE.Group();
-  g.add(M(cached('rd', () => {
-    const b = new Builder();
-    b.cylZ(C.wood, 0.014, 0.95, 0, 0, -0.42, 7);
-    b.cylZ(C.woodDark, 0.016, 0.03, 0, 0, 0.05, 7); // ponta do cabo
-    b.cylZ(C.blue, 0.017, 0.05, 0, 0, -0.88, 7); // rosca de plástico
-    b.box(C.blue, 0.4, 0.045, 0.045, 0, 0, -0.92); // cabeça
-    b.box(C.blueDark, 0.4, 0.012, 0.047, 0, 0.026, -0.92);
-    b.box(C.black, 0.42, 0.04, 0.012, 0, -0.04, -0.92); // borracha
-    b.box(C.black, 0.42, 0.012, 0.03, 0, -0.06, -0.92);
-    return b.build();
-  })));
-  return { g, p: { muzzle: anchor(g, 0, 0, -0.92) } };
-}
-
 /** Estampa florida clássica de garrafa térmica (fundo vermelho, flores brancas e amarelas). */
 const floral = (c: CanvasRenderingContext2D, w: number, h: number) => {
   c.fillStyle = '#c8281e';
@@ -623,8 +613,103 @@ function cafe(): { g: THREE.Group; p: HeldParts } {
   return { g, p: { muzzle: anchor(g, -0.075, 0.19, -0.1), nozzle } };
 }
 
+/**
+ * Rojão de vara (festa junina), apontando para -Z: tubo de papelão vermelho com cinta verde e amarela, cabeça azul
+ * pontuda e vara de bambu presa com fita. Origem = palma da mão direita, que segura a vara.
+ */
+function rojaoGeo(): THREE.BufferGeometry {
+  return cached('rj', () => {
+    const b = new Builder();
+    b.cylZ(C.wood, 0.006, 0.44, 0, 0, 0.02, 5); // vara de bambu
+    b.cylZ(C.woodDark, 0.0075, 0.015, 0, 0, 0.245, 5); // nó
+    b.cylZ(C.red, 0.032, 0.22, 0, 0.04, -0.25, 8); // tubo
+    b.cylZ(C.green, 0.0335, 0.05, 0, 0.04, -0.2, 8); // cinta verde
+    b.cylZ(C.yellow, 0.0335, 0.02, 0, 0.04, -0.29, 8); // cinta amarela
+    b.cylZ(C.blue, 0.004, 0.09, 0, 0.04, -0.405, 8, 0.032); // cabeça pontuda (afina para -Z)
+    b.box(C.tape, 0.036, 0.075, 0.022, 0, 0.02, -0.165); // fita prendendo a vara
+    b.cylZ(0xf2f2ee, 0.003, 0.05, 0, 0.04, -0.115, 4); // pavio (sai pela traseira)
+    return b.build();
+  });
+}
+function rojao(): { g: THREE.Group; p: HeldParts } {
+  const g = new THREE.Group();
+  g.add(M(rojaoGeo()));
+  const flame = flameSprite(0xffc060);
+  flame.position.set(0, 0.04, -0.085);
+  flame.scale.set(0.05, 0.05, 1);
+  g.add(flame);
+  return { g, p: { muzzle: anchor(g, 0, 0.04, -0.46), flame } };
+}
+
+/** Galinha da vovó (sem pernas), olhando para -Z. Origem = centro do corpo. Cabeça e asas são peças animáveis. */
+function henParts(): { g: THREE.Group; p: HeldParts } {
+  const g = new THREE.Group();
+  g.add(M(cached('hn-body', () => {
+    const b = new Builder();
+    b.box(C.hen, 0.13, 0.12, 0.19, 0, 0, 0.01);
+    b.box(C.henLight, 0.11, 0.1, 0.07, 0, -0.01, -0.09); // peito
+    b.box(C.henDark, 0.12, 0.02, 0.15, 0, 0.065, 0.02); // dorso
+    // rabo de galo: três penas escuras abertas em leque
+    b.box(C.henTail, 0.02, 0.11, 0.05, 0, 0.1, 0.12, -0.35);
+    b.box(C.henTail, 0.02, 0.1, 0.05, -0.035, 0.09, 0.115, -0.3, 0, 0.35);
+    b.box(C.henTail, 0.02, 0.1, 0.05, 0.035, 0.09, 0.115, -0.3, 0, -0.35);
+    return b.build();
+  })));
+  const head = new THREE.Group();
+  head.add(M(cached('hn-head', () => {
+    const b = new Builder();
+    b.box(C.hen, 0.06, 0.07, 0.06, 0, 0.02, 0); // pescoço
+    b.box(C.henLight, 0.062, 0.062, 0.07, 0, 0.07, -0.015); // cabeça
+    b.box(C.henBeak, 0.022, 0.014, 0.035, 0, 0.066, -0.066); // bico de cima
+    b.box(C.henBeak, 0.016, 0.008, 0.025, 0, 0.052, -0.06); // bico de baixo
+    b.box(C.comb, 0.014, 0.03, 0.05, 0, 0.11, -0.015); // crista
+    b.box(C.comb, 0.014, 0.02, 0.014, 0, 0.123, -0.03);
+    b.box(C.comb, 0.014, 0.02, 0.014, 0, 0.123, 0.0);
+    b.box(C.comb, 0.012, 0.026, 0.012, 0, 0.034, -0.062); // barbela
+    // olhos arregalados (e um pouco vesgos)
+    for (const sx of [-1, 1]) {
+      b.box(0xffffff, 0.014, 0.024, 0.024, sx * 0.032, 0.078, -0.03);
+      b.box(C.black, 0.006, 0.011, 0.011, sx * 0.039, 0.078, -0.038);
+    }
+    return b.build();
+  })));
+  head.position.set(0, 0.08, -0.1);
+  g.add(head);
+  const wingG = cached('hn-wing', () => {
+    const b = new Builder();
+    b.box(0xa86e34, 0.02, 0.075, 0.14, 0.01, 0, 0.01);
+    b.box(C.henDark, 0.022, 0.03, 0.06, 0.012, -0.045, 0.045);
+    return b.build();
+  });
+  const wingR = new THREE.Group(), wingL = new THREE.Group();
+  wingR.add(M(wingG));
+  const ml = M(wingG);
+  ml.scale.x = -1;
+  wingL.add(ml);
+  wingR.position.set(0.065, 0.01, 0.01);
+  wingL.position.set(-0.065, 0.01, 0.01);
+  g.add(wingR, wingL);
+  return { g, p: { muzzle: anchor(g, 0, 0.05, -0.2), wingL, wingR, head } };
+}
+
+/** Perna de galinha pendurada em y=0 (descendo até o pé, dedos para -Z). */
+function henLegGeo(): THREE.BufferGeometry {
+  return cached('hn-leg', () => {
+    const b = new Builder();
+    b.box(C.henBeak, 0.012, 0.06, 0.012, 0, -0.03, 0);
+    b.box(C.henBeak, 0.03, 0.008, 0.042, 0, -0.064, -0.014);
+    return b.build();
+  });
+}
+/** Galinha na mão: pernas penduradas. */
+function galinha(): { g: THREE.Group; p: HeldParts } {
+  const { g, p } = henParts();
+  for (const sx of [-1, 1]) g.add(M(henLegGeo(), sx * 0.03, -0.06, 0.0));
+  return { g, p };
+}
+
 const BUILDERS: Record<SpecialId, () => { g: THREE.Group; p: HeldParts }> = {
-  lorenzetti, estilingue, dolly, rexona, pombo: pigeonParts, chinelo, panela, ventilador, tijolo, bola, pipa, rodo, cafe,
+  lorenzetti, estilingue, dolly, rexona, pombo: pigeonParts, chinelo, panela, ventilador, tijolo, bola, pipa, cafe, rojao, galinha,
 };
 
 // ------------------------------------------------------------------ animação passiva
@@ -666,6 +751,23 @@ function passiveTick(id: SpecialId, p: HeldParts, t: number, dt: number, active:
       p.flame!.scale.set(0.028 * f, 0.05 * f, 1);
       break;
     }
+    case 'rojao': {
+      // pavio aceso chiando: a faísca pisca e muda de tamanho
+      const f = 0.7 + Math.random() * 0.6;
+      p.flame!.scale.set(0.05 * f, 0.05 * f, 1);
+      break;
+    }
+    case 'galinha': {
+      // bica o ar, olha pros lados e de vez em quando bate as asas (muito mais, quando "ativa")
+      const peck = Math.pow(Math.max(0, Math.sin(t * 3.1)), 6);
+      const fl = Math.max(0, Math.sin(t * 1.9) * Math.sin(t * 6.7));
+      const a = fl * Math.sin(t * 34) * 0.7 + active * Math.sin(t * 32) * 0.9;
+      p.wingR!.rotation.z = -Math.abs(a);
+      p.wingL!.rotation.z = Math.abs(a);
+      p.head!.rotation.set(peck * 0.55 + Math.sin(t * 5) * 0.12, Math.sin(t * 2.3) * 0.5, 0);
+      p.head!.position.z = -0.1 - peck * 0.02 + Math.sin(t * 9) * 0.006;
+      break;
+    }
     case 'estilingue':
       updateBands(p);
       break;
@@ -689,7 +791,7 @@ export function buildHeldModel(id: SpecialId): THREE.Object3D {
  * 3ª pessoa: onde a mão esquerda vai (espaço do item, em metros) e a escala do item na mão do boneco.
  * null = só a mão direita.
  */
-export const HELD_TP: Record<SpecialId, { left: [number, number, number] | null; scale: number; rx?: number }> = {
+export const HELD_TP: Record<SpecialId, { left: [number, number, number] | null; scale: number }> = {
   lorenzetti: { left: [-0.03, -0.02, 0.0], scale: 1.3 },
   estilingue: { left: [0, 0.12, 0.12], scale: 1.4 },
   dolly: { left: null, scale: 1.2 },
@@ -701,15 +803,16 @@ export const HELD_TP: Record<SpecialId, { left: [number, number, number] | null;
   tijolo: { left: null, scale: 1.3 },
   bola: { left: [0, 0.02, -0.2], scale: 1.4 },
   pipa: { left: [-0.02, 0.1, -0.2], scale: 1.3 },
-  rodo: { left: [0, 0, -0.12], scale: 1.0, rx: 1.25 },
   cafe: { left: [-0.075, 0.2, 0.0], scale: 1.3 },
+  rojao: { left: [0, 0.04, -0.24], scale: 1.3 },
+  galinha: { left: [-0.1, -0.02, -0.02], scale: 1.5 },
 };
 
 // ------------------------------------------------------------------ pickup
 
 const labels = new Map<string, THREE.CanvasTexture>();
 const PICK_SCALE: Record<SpecialId, number> = {
-  lorenzetti: 3.7, estilingue: 4.2, dolly: 2.7, rexona: 4.2, pombo: 3.2, chinelo: 3.7, panela: 2.7, ventilador: 2.7, tijolo: 3.5, bola: 3.0, pipa: 3.8, rodo: 2.0, cafe: 3.4,
+  lorenzetti: 3.7, estilingue: 4.2, dolly: 2.7, rexona: 4.2, pombo: 3.2, chinelo: 3.7, panela: 2.7, ventilador: 2.7, tijolo: 3.5, bola: 3.0, pipa: 3.8, cafe: 3.4, rojao: 3.4, galinha: 3.0,
 };
 
 const BEAM_H = 160;
@@ -893,6 +996,62 @@ export function buildProjectileModel(kind: ProjKind): THREE.Object3D {
       const m = M(chineloGeo(), 0, 0, 0.0);
       m.scale.setScalar(1.6);
       g.add(m);
+      break;
+    }
+
+    case 'rojao': {
+      // foguete com o nariz em +Z (o modelo da mão aponta para -Z: gira 180°) e rastro de faíscas colorido de festa
+      const rocket = M(rojaoGeo());
+      rocket.rotation.y = Math.PI;
+      rocket.scale.setScalar(1.5);
+      g.add(rocket);
+      const COLS = [0xffe080, 0x28ffa8, 0xff4a3a, 0xffd200, 0x2a9bff, 0xff5ad0, 0xffa030];
+      const sparks: THREE.Sprite[] = [];
+      for (let i = 0; i < 9; i++) {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: softTexture(), color: COLS[i % COLS.length], transparent: true, opacity: 0.9 - i * 0.08, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+        }));
+        sp.position.z = 0.1 - i * 0.17;
+        sp.scale.setScalar(0.42 - i * 0.03);
+        g.add(sp);
+        sparks.push(sp);
+      }
+      g.userData.anim = (t: number) => {
+        sparks.forEach((sp, i) => {
+          const f = 0.8 + 0.4 * Math.sin(t * 50 + i * 2.1);
+          sp.scale.setScalar((0.42 - i * 0.03) * f);
+          sp.position.x = Math.sin(t * 31 + i * 1.7) * 0.025 * i;
+          sp.position.y = Math.cos(t * 27 + i * 1.3) * 0.025 * i;
+        });
+      };
+      break;
+    }
+
+    case 'galinha': {
+      // galinha correndo (nariz em +Z): pernas alternando, cabeça balançando e asinhas abertas de pânico.
+      // Origem = centro do corpo; os pés ficam ~0.21 m abaixo.
+      const { g: hen, p } = henParts();
+      hen.rotation.y = Math.PI;
+      hen.scale.setScalar(1.7);
+      g.add(hen);
+      const legs: THREE.Group[] = [];
+      for (const sx of [-1, 1]) {
+        const leg = new THREE.Group();
+        leg.add(M(henLegGeo()));
+        leg.position.set(sx * 0.03, -0.06, 0);
+        hen.add(leg);
+        legs.push(leg);
+      }
+      g.userData.anim = (t: number) => {
+        const ph = t * 22;
+        legs[0].rotation.x = Math.sin(ph) * 0.9;
+        legs[1].rotation.x = -Math.sin(ph) * 0.9;
+        hen.position.y = Math.abs(Math.sin(ph)) * 0.025;
+        p.head!.position.z = -0.1 + Math.sin(ph * 2) * 0.02;
+        p.head!.rotation.x = Math.sin(ph * 2 + 1) * 0.15;
+        p.wingR!.rotation.z = -0.5 - Math.sin(ph * 1.5) * 0.5;
+        p.wingL!.rotation.z = 0.5 + Math.sin(ph * 1.5) * 0.5;
+      };
       break;
     }
   }
