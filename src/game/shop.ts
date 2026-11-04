@@ -4,7 +4,7 @@ import type { WeaponId } from './weaponDefs';
 
 /**
  * Modo 'gungame' (id antigo; hoje é o modo da loja):
- * - ESCADA: 13 armas malucas, da mais fraca à mais forte. 1 kill sobe um nível; quem mata no último nível vence.
+ * - ESCADA: 15 armas malucas, da mais fraca à mais forte. 1 kill sobe um nível; quem mata no último nível vence.
  * - LOJA (tecla B): armas comuns e extras, pagos com o dinheiro das kills. Comum comprada substitui a maluca
  *   até morrer. Tudo é número de jogo: mexa à vontade.
  */
@@ -22,7 +22,7 @@ export const ARMOR_ABSORB = 0.5;
  * Mexa na ordem aqui para rebalancear.
  */
 export const LADDER: SpecialId[] = [
-  'ventilador', 'chinelo', 'galinha', 'pombo', 'cafe', 'rexona', 'bola', 'pipa', 'rojao', 'panela', 'dolly', 'estilingue', 'lorenzetti', 'tijolo',
+  'ventilador', 'chinelo', 'galinha', 'bong', 'pombo', 'cafe', 'rexona', 'bola', 'pipa', 'rojao', 'panela', 'dolly', 'estilingue', 'lorenzetti', 'tijolo',
 ];
 export const ladderWeapon = (level: number): SpecialId => LADDER[Math.max(0, Math.min(level, LADDER.length - 1))];
 

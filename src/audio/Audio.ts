@@ -63,6 +63,7 @@ const BEAM_LAYERS: Record<string, [string, number][]> = {
   ventilador: [['fanLoop', 1], ['windLoop', 0.9], ['chopLoop', 0]],
   cafe: [['jetLoop', 1], ['sprayLoop', 0.35]],
   pipa: [['kiteLoop', 1], ['cutLoop', 0]],
+  bong: [['bubbleLoop', 1], ['sprayLoop', 0.2]],
 };
 
 /** Camada que liga/desliga com o estado `hit` (ou `chop`) do evento. */
@@ -662,6 +663,7 @@ export class AudioSystem {
         case 'blind': this.play('splat', { ...o, vol: e.local ? 1.1 : 1 }); break;
         case 'stun': this.play('stunBirds', { ...o, vol: 0.9 }); break;
         case 'steam': this.play('steam', o); break;
+        case 'chapado': this.play('cough', { ...o, vol: e.local ? 1 : 0.9 }); break;
       }
     });
 

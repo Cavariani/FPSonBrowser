@@ -84,6 +84,11 @@ const DEFS: Record<SpecialId, RigDef> = {
     hipPos: [0.03, -0.2, -0.5], hipRot: [0.12, 0.7, 0.0], right: pose(0.09, -0.025, 0.02, 0.55, 0.3, -1.65),
     left: pose(-0.09, -0.025, 0.02, 0.55, -0.3, 1.65), leftGrip: false, thrown: true,
   },
+  bong: {
+    // segura pelo tubo, bocal perto da cara, fornilho pra frente
+    hipPos: [0.15, -0.15, -0.55], hipRot: [0.04, 0.32, 0.03], right: R,
+    left: null, leftGrip: false,
+  },
 };
 
 const BACK_FEEL: Partial<Record<SpecialId, [number, number]>> = {
@@ -712,6 +717,27 @@ export class SpecialHands {
         } else if (item.visible && Math.random() < dtReal * 8) {
           // fumacinha de café quente saindo do bico
           this.fx.spawn(this.world(P.muzzle), rnd(0.04), 0.25, rnd(0.04), 0.7, 0.012, 0.06, 0x9a9a9a, 0x202020, -0.15);
+        }
+        break;
+      }
+
+      case 'bong': {
+        const a = this.active;
+        if (a > 0.05) {
+          // soprando: o bong treme de leve, a água borbulha e a fumaça sai pelo bocal pra frente
+          o.px += rnd(0.002) * a; o.py += rnd(0.002) * a; o.pz += 0.01 * a;
+          o.rx -= 0.12 * a;
+          this.emit(dtReal, 60 * a, () => {
+            const p = this.world(P.muzzle);
+            this.fx.spawn(p, rnd(0.15), 0.1 + rnd(0.1), -1.1 - Math.random() * 0.5, 0.55, 0.04, 0.22, 0x9fc89a, 0x202a20, -0.2);
+          });
+          this.emit(dtReal, 30 * a, () => {
+            const p = this.world(P.glow!);
+            this.fx.spawn(p, rnd(0.03), 0.15, rnd(0.03), 0.18, 0.012, 0.004, 0xffc060, 0xff3000, -0.5);
+          });
+        } else if (item.visible && Math.random() < dtReal * 5) {
+          // fiozinho de fumaça saindo do fornilho
+          this.fx.spawn(this.world(P.glow!), rnd(0.03), 0.2, rnd(0.03), 0.9, 0.01, 0.05, 0x8a9a88, 0x101410, -0.12);
         }
         break;
       }

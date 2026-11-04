@@ -24,7 +24,7 @@ const _sa = new V(), _sb = new V(), _sr = new V();
 const PROJ_SPECIAL: Record<ProjKind, SpecialId> = {
   stone: 'estilingue', bottle: 'dolly', brick: 'tijolo', panela: 'panela', bola: 'bola', pombo: 'pombo', chinelo: 'chinelo', rojao: 'rojao', galinha: 'galinha',
 };
-const BEAM_KINDS: SpecialId[] = ['lorenzetti', 'rexona', 'ventilador', 'cafe'];
+const BEAM_KINDS: SpecialId[] = ['lorenzetti', 'rexona', 'ventilador', 'cafe', 'bong'];
 
 const clamp = (n: number, a: number, b: number): number => (n < a ? a : n > b ? b : n);
 const ok3 = (v: unknown): v is [number, number, number] => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
@@ -95,6 +95,8 @@ export interface SState {
   lastHit: boolean;
   /** Loja: progresso (0..1) até a próxima unidade de munição voltar. */
   regen: number;
+  /** Bong: tragada acumulada (s). Passou do limite, quem sopra fica chapado. */
+  heat: number;
 }
 
 export interface Trigger {
@@ -112,6 +114,8 @@ export interface SpecialHud {
   blind: number;
   /** Vapor do café na tela: 0..1. */
   steam: number;
+  /** Fumaça do bong (chapado): 0..1. */
+  chapado: number;
   burning: boolean;
   stunned: boolean;
   shocked: boolean;
@@ -147,6 +151,7 @@ export class SpecialSystem implements ProjHost {
       statusLeft: (id, k) => this.status.left(id, k),
       localBlind: () => (g.local ? this.status.blind(g.local.id) : 0),
       localSteam: () => (g.local ? this.status.steam(g.local.id) : 0),
+      localChapado: () => (g.local ? this.status.chapado(g.local.id) : 0),
       groundY: (x, y, z) => {
         const h = g.world.raycast(probe.set(x, y + 0.4, z), down, 40);
         return h ? h.point.y : Math.max(0, y - 1);
@@ -298,7 +303,7 @@ export class SpecialSystem implements ProjHost {
     if (this.simulates(a)) {
       this.states.set(a.id, {
         id: kind, ammo, cd: 0.45, charge: 0, charging: false, beamOn: false, tickT: 0, tickN: 0,
-        confirmAcc: 0, confirmT: 0, netT: 0, out: false, endT: 0, kite: null, chop: false, lastHit: false, regen: 0,
+        confirmAcc: 0, confirmT: 0, netT: 0, out: false, endT: 0, kite: null, chop: false, lastHit: false, regen: 0, heat: 0,
       });
     }
     if (a.isLocal) {
@@ -567,9 +572,11 @@ export class SpecialSystem implements ProjHost {
           active: !!st && (st.beamOn || !!st.kite),
         }
         : null,
-      charge: st?.charging ? st.charge : 0,
+      // bong: a barra de carga mostra a tragada (cheia = vai chapar)
+      charge: st?.charging ? st.charge : st?.id === 'bong' ? Math.min(1, st.heat / SPECIALS.bong.p.overdose) : 0,
       blind,
       steam: l ? this.status.steam(l.id) : 0,
+      chapado: l ? this.status.chapado(l.id) : 0,
       burning: !!l && this.status.has(l.id, 'burn'),
       stunned: !!l && this.status.has(l.id, 'stun'),
       shocked: !!l && this.status.has(l.id, 'shock'),
@@ -885,6 +892,11 @@ export class SpecialSystem implements ProjHost {
 
   private controlContinuous(a: Actor, st: SState, dt: number, held: boolean, eye: THREE.Vector3, dir: THREE.Vector3): void {
     const P = SPECIALS[st.id].p;
+    if (st.id === 'bong') {
+      // tossindo (cd): não sopra. Soltou o botão: a tragada baixa devagar.
+      if (st.cd > 0) held = false;
+      if (!held || st.ammo <= 0) st.heat = Math.max(0, st.heat - dt * P.cool);
+    }
     if (held && st.ammo > 0) {
       st.ammo = Math.max(0, st.ammo - dt);
       a.specialAmmo = st.ammo;
@@ -893,6 +905,15 @@ export class SpecialSystem implements ProjHost {
       if (st.tickT <= 0) { doTick = true; st.tickT = Math.max(st.tickT + P.tick, 0); st.tickN++; }
       const r = this.beamTick(a, st, eye, dir, doTick);
       st.beamOn = true;
+      if (st.id === 'bong') {
+        st.heat += dt;
+        if (st.heat >= P.overdose) {
+          // puxou demais: chapa quem está soprando e ele tosse um pouco sem conseguir soprar
+          st.heat = 0;
+          st.cd = P.cough;
+          this.hurt(a, a, { dmg: 0, weapon: 'bong', st: 'chapado', sd: P.selfHigh, confirm: false, impact: false });
+        }
+      }
 
       // origem visual: perto do "cano"
       const origin = this.muzzle(eye, dir, new V());
@@ -1012,6 +1033,21 @@ export class SpecialSystem implements ProjHost {
           dmg, weapon: 'cafe', point: chest, dir, confirm: false, impact: false,
           st: burning ? undefined : 'burn', sd: P.burn, st2: steamy ? undefined : 'steam', sd2: P.steam,
         });
+        this.groupConfirm(a, st, dmg, v, chest);
+      });
+      return { end, end2: null, hit };
+    }
+
+    if (st.id === 'bong') {
+      // nuvem de fumaça: dano baixo, mas deixa chapado
+      const wh = world.raycast(eye, dir, P.range);
+      end = wh ? wh.point.clone() : eye.clone().addScaledVector(dir, P.range);
+      this.inCone(a, eye, dir, P.range, P.cone, (v, _d2, chest) => {
+        hit = true;
+        if (!doTick) return;
+        const dmg = tickDmg(P.dps * P.tick, st.tickN);
+        const high = this.status.left(v.id, 'chapado') > P.high - 1;
+        this.hurt(a, v, { dmg, weapon: 'bong', point: chest, dir, confirm: false, impact: false, st: high ? undefined : 'chapado', sd: P.high });
         this.groupConfirm(a, st, dmg, v, chest);
       });
       return { end, end2: null, hit };

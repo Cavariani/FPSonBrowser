@@ -72,7 +72,7 @@ export interface MatchHost {
   publish(e: MatchEvent): void;
 }
 
-const STATUS_KINDS: StatusKind[] = ['burn', 'shock', 'blind', 'stun', 'steam'];
+const STATUS_KINDS: StatusKind[] = ['burn', 'shock', 'blind', 'stun', 'steam', 'chapado'];
 
 export const RESPAWN_TIME = 2.5;
 const END_TIME = 7;

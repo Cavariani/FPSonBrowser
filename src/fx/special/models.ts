@@ -709,8 +709,47 @@ function galinha(): { g: THREE.Group; p: HeldParts } {
   return { g, p };
 }
 
+/**
+ * Bong de vidro verde com anéis rasta. Segura pelo tubo, inclinado pra frente: a fumaça sai pela boca, em cima.
+ * O fornilho (com a erva) fica na haste da frente; a brasa acende quando sopra.
+ */
+function bong(): { g: THREE.Group; p: HeldParts } {
+  const g = new THREE.Group();
+  const body = new THREE.Group();
+  const glass = 0x7fd8a8, glassDark = 0x3f9a74;
+  body.add(M(cached('bg', () => {
+    const b = new Builder();
+    b.cyl(glassDark, 0.066, 0.02, 0, -0.14, 0, 0, 0, 0, 12); // base
+    b.push(new THREE.CylinderGeometry(0.03, 0.068, 0.1, 12), glass, 0, -0.08, 0); // bojo
+    b.cyl(0x2f7fa0, 0.06, 0.03, 0, -0.112, 0, 0, 0, 0, 12); // água
+    b.cyl(glass, 0.026, 0.27, 0, 0.1, 0, 0, 0, 0, 10); // tubo
+    b.cyl(C.red, 0.028, 0.018, 0, 0.06, 0, 0, 0, 0, 10); // anéis rasta
+    b.cyl(C.yellow, 0.028, 0.018, 0, 0.078, 0, 0, 0, 0, 10);
+    b.cyl(C.green, 0.028, 0.018, 0, 0.096, 0, 0, 0, 0, 10);
+    b.cyl(glassDark, 0.032, 0.02, 0, 0.24, 0, 0, 0, 0, 10); // bocal
+    b.cyl(glass, 0.009, 0.11, 0, -0.05, -0.045, -0.93, 0, 0, 6); // haste, do bojo pra frente e pra cima
+    b.push(new THREE.CylinderGeometry(0.024, 0.011, 0.03, 8), C.steel, 0, -0.004, -0.088); // fornilho
+    b.box(0x4a7a2a, 0.032, 0.008, 0.032, 0, 0.01, -0.088); // erva
+    return b.build();
+  })));
+  // menor que o tamanho real e virado de lado: em 1ª pessoa o bong inteiro cabe na tela, com o fornilho à mostra
+  body.scale.setScalar(0.72);
+  body.rotation.set(-0.2, 0.9, 0);
+  g.add(body);
+  const glow = glowSprite(0xff5a10);
+  glow.position.set(0, 0.018, -0.088);
+  glow.scale.setScalar(0.07);
+  body.add(glow);
+  const flame = flameSprite(0xffb040);
+  flame.position.set(0, 0.04, -0.088);
+  flame.scale.set(0.02, 0.035, 1);
+  flame.visible = false;
+  body.add(flame);
+  return { g, p: { muzzle: anchor(body, 0, 0.255, 0), glow, flame } };
+}
+
 const BUILDERS: Record<SpecialId, () => { g: THREE.Group; p: HeldParts }> = {
-  lorenzetti, estilingue, dolly, rexona, pombo: pigeonParts, chinelo, panela, ventilador, tijolo, bola, pipa, cafe, rojao, galinha,
+  lorenzetti, estilingue, dolly, rexona, pombo: pigeonParts, chinelo, panela, ventilador, tijolo, bola, pipa, cafe, rojao, galinha, bong,
 };
 
 // ------------------------------------------------------------------ animação passiva
@@ -775,6 +814,14 @@ function passiveTick(id: SpecialId, p: HeldParts, t: number, dt: number, active:
     case 'lorenzetti':
       (p.glow!.material as THREE.SpriteMaterial).opacity = active * (0.6 + Math.random() * 0.4);
       break;
+    case 'bong': {
+      // brasa: quase apagada parada, acende soprando; o isqueiro só aparece em uso
+      const f = 0.8 + Math.random() * 0.4;
+      (p.glow!.material as THREE.SpriteMaterial).opacity = 0.15 + active * 0.75 * f;
+      p.flame!.visible = active > 0.1;
+      p.flame!.scale.set(0.02 * f, 0.035 * f, 1);
+      break;
+    }
   }
 }
 
@@ -807,13 +854,14 @@ export const HELD_TP: Record<SpecialId, { left: [number, number, number] | null;
   cafe: { left: [-0.075, 0.2, 0.0], scale: 1.3 },
   rojao: { left: [0, 0.04, -0.24], scale: 1.3 },
   galinha: { left: [-0.1, -0.02, -0.02], scale: 1.5 },
+  bong: { left: null, scale: 1.8 },
 };
 
 // ------------------------------------------------------------------ pickup
 
 const labels = new Map<string, THREE.CanvasTexture>();
 const PICK_SCALE: Record<SpecialId, number> = {
-  lorenzetti: 3.7, estilingue: 4.2, dolly: 2.7, rexona: 4.2, pombo: 3.2, chinelo: 3.7, panela: 2.7, ventilador: 2.7, tijolo: 3.5, bola: 3.0, pipa: 3.8, cafe: 3.4, rojao: 3.4, galinha: 3.0,
+  lorenzetti: 3.7, estilingue: 4.2, dolly: 2.7, rexona: 4.2, pombo: 3.2, chinelo: 3.7, panela: 2.7, ventilador: 2.7, tijolo: 3.5, bola: 3.0, pipa: 3.8, cafe: 3.4, rojao: 3.4, galinha: 3.0, bong: 4.4,
 };
 
 const BEAM_H = 160;

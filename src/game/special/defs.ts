@@ -5,11 +5,11 @@ import type { WeaponDef, WeaponId } from '../weaponDefs';
 export type SpecialId =
   | 'lorenzetti' | 'estilingue' | 'dolly' | 'rexona' | 'pombo'
   | 'chinelo' | 'panela' | 'ventilador' | 'tijolo'
-  | 'bola' | 'pipa' | 'cafe' | 'rojao' | 'galinha';
+  | 'bola' | 'pipa' | 'cafe' | 'rojao' | 'galinha' | 'bong';
 
 export const SPECIAL_IDS: SpecialId[] = [
   'lorenzetti', 'estilingue', 'dolly', 'rexona', 'pombo', 'chinelo', 'panela', 'ventilador', 'tijolo',
-  'bola', 'pipa', 'cafe', 'rojao', 'galinha',
+  'bola', 'pipa', 'cafe', 'rojao', 'galinha', 'bong',
 ];
 
 /** Qualquer arma que pode aparecer em dano/kill: as do gun game + as malucas. */
@@ -17,14 +17,14 @@ export type AnyWeaponId = WeaponId | SpecialId;
 
 export const isSpecialId = (w: string): w is SpecialId => (SPECIAL_IDS as string[]).includes(w);
 
-/** Efeitos de status. `steam` = vapor do café: embaça a tela da vítima. */
-export type StatusKind = 'burn' | 'shock' | 'blind' | 'stun' | 'steam';
+/** Efeitos de status. `steam` = vapor do café: embaça a tela da vítima. `chapado` = fumaça do bong: tela doida e mira à deriva. */
+export type StatusKind = 'burn' | 'shock' | 'blind' | 'stun' | 'steam' | 'chapado';
 
 /** Projéteis físicos. */
 export type ProjKind = 'stone' | 'bottle' | 'brick' | 'panela' | 'bola' | 'pombo' | 'chinelo' | 'rojao' | 'galinha';
 
 /** Armas de raio/jato contínuo (segurar o botão). */
-export type BeamKind = 'lorenzetti' | 'rexona' | 'ventilador' | 'cafe';
+export type BeamKind = 'lorenzetti' | 'rexona' | 'ventilador' | 'cafe' | 'bong';
 
 export type SpecialStyle = 'beam' | 'charge' | 'throw' | 'flame' | 'homing' | 'boomerang' | 'wind' | 'kick' | 'kite' | 'jet';
 
@@ -133,6 +133,14 @@ export const SPECIALS: Record<SpecialId, SpecialDef> = {
     style: 'homing', ammo: 6, unit: 'shot', color: 0xc58a4a,
     // Corre no chão atrás do inimigo mais próximo (speed m/s, turn rad/s). Ao encostar, bica `pecks` vezes (dmg cada, a cada peckCd s).
     p: { speed: 9.5, turn: 5.5, life: 8, acquire: 28, acquireCone: 2.4, radius: 0.55, dmg: 46, pecks: 3, peckCd: 0.4, cd: 0.9 },
+  },
+  bong: {
+    id: 'bong', name: 'Bong', short: 'BONG', hint: 'Segure para soprar fumaça. Puxou demais, chapa você',
+    style: 'jet', ammo: 7, unit: 'sec', color: 0x7fb800,
+    // Nuvem de fumaça em cone: pouco dano, mas deixa a vítima chapada (`high` s: tela doida, mira à deriva, mais lenta).
+    // Quem sopra acumula "tragada" enquanto segura; passou de `overdose` s, chapa ele mesmo (`selfHigh` s) e tosse
+    // (`cough` s sem soprar). Soltando o botão, a tragada baixa `cool` por segundo.
+    p: { range: 10, cone: 0.38, dps: 45, tick: 0.1, high: 4.5, overdose: 2.6, cool: 0.8, selfHigh: 5.5, cough: 1.1 },
   },
 };
 

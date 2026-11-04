@@ -6,16 +6,17 @@ interface Rec {
   blind: number; blindDur: number;
   stun: number;
   steam: number;
+  chapado: number;
   /** "Empurrado": queda dentro da janela conta como kill de quem empurrou. */
   pushT: number; pushBy: string; pushW: SpecialId | null;
 }
 
-const KINDS: StatusKind[] = ['burn', 'shock', 'blind', 'stun', 'steam'];
+const KINDS: StatusKind[] = ['burn', 'shock', 'blind', 'stun', 'steam', 'chapado'];
 const fresh = (): Rec => ({
-  burn: 0, burnBy: '', burnW: null, burnAcc: 0, shock: 0, blind: 0, blindDur: 1, stun: 0, steam: 0, pushT: 0, pushBy: '', pushW: null,
+  burn: 0, burnBy: '', burnW: null, burnAcc: 0, shock: 0, blind: 0, blindDur: 1, stun: 0, steam: 0, chapado: 0, pushT: 0, pushBy: '', pushW: null,
 });
 
-/** Efeitos de status por actor (queimando, choque, cegueira de pombo, atordoado, vapor). Roda em todas as máquinas. */
+/** Efeitos de status por actor (queimando, choque, cegueira de pombo, atordoado, vapor, chapado). Roda em todas as máquinas. */
 export class StatusManager {
   private m = new Map<string, Rec>();
 
@@ -34,6 +35,7 @@ export class StatusManager {
       case 'blind': r.blind = Math.max(r.blind, dur); r.blindDur = Math.max(r.blindDur, r.blind); break;
       case 'stun': r.stun = Math.max(r.stun, dur); break;
       case 'steam': r.steam = Math.max(r.steam, dur); break;
+      case 'chapado': r.chapado = Math.max(r.chapado, dur); break;
     }
   }
 
@@ -59,6 +61,13 @@ export class StatusManager {
     const r = this.m.get(id);
     if (!r || r.steam <= 0) return 0;
     return Math.min(1, r.steam / 0.8);
+  }
+
+  /** Fumaça do bong 0..1 (entra rápido; some nos últimos ~1.2 s). */
+  chapado(id: string): number {
+    const r = this.m.get(id);
+    if (!r || r.chapado <= 0) return 0;
+    return Math.min(1, r.chapado / 1.2);
   }
 
   markPush(id: string, by: string, weapon: SpecialId | null, t: number): void {
@@ -109,7 +118,7 @@ export class StatusManager {
           burnTick?.(id, r.burnBy, r.burnW);
         }
       }
-      if (r.burn <= 0 && r.shock <= 0 && r.blind <= 0 && r.stun <= 0 && r.steam <= 0 && r.pushT <= 0) this.m.delete(id);
+      if (r.burn <= 0 && r.shock <= 0 && r.blind <= 0 && r.stun <= 0 && r.steam <= 0 && r.chapado <= 0 && r.pushT <= 0) this.m.delete(id);
     }
   }
 }

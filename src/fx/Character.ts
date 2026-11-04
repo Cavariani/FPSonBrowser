@@ -3,6 +3,7 @@ import type { SpecialId } from '../game/special/defs';
 import type { WeaponId } from '../game/weaponDefs';
 import { blobTexture } from '../render/textures';
 import { partsGeo, sym, type Part } from './char/geo';
+import { NameTag } from './char/nametag';
 import { GRIPS, weaponGeo } from './char/weapons';
 import { buildHeldModel, HELD_TP } from './special/models';
 
@@ -349,6 +350,9 @@ export class CharacterModel {
   private flashing = false;
   private flashMat: THREE.Material;
   private seed: number;
+  /** Nome do jogador em cima da cabeça. */
+  private tag = new NameTag();
+  private tagColor: number;
 
   // cara de papel (foto do jogador)
   private paper = new THREE.Group();
@@ -379,6 +383,7 @@ export class CharacterModel {
 
   constructor(color: number, seed = 0) {
     this.seed = seed;
+    this.tagColor = color;
     const { mat, white, shadowMat, shadowGeo } = mats();
     this.flashMat = white;
     const L = makeLook(seed);
@@ -417,11 +422,17 @@ export class CharacterModel {
     this.hips.position.y = HIP;
     this.hips.add(this.thighL, this.thighR, this.spine);
     this.body.add(this.hips);
-    this.root.add(this.body, this.shadow);
+    this.tag.sprite.position.y = 2.12;
+    this.root.add(this.body, this.shadow, this.tag.sprite);
     this.meshes = [this.thighL, this.thighR, this.shinL, this.shinR, this.torso, this.head, this.armL, this.armR, this.weapon];
     this.setWeapon('smg');
     this.poseArms(1);
     this.paperTilt = ((seed % 7) - 3) * 0.035;
+  }
+
+  /** Nome mostrado em cima do boneco ('' esconde). */
+  setName(name: string): void {
+    this.tag.set(name, this.tagColor);
   }
 
   /**
@@ -595,6 +606,7 @@ export class CharacterModel {
       this.paper.rotation.x = -0.04 - amp * 0.18 - a * 0.25 + Math.sin(this.paperT * 9 + this.phase) * (0.03 + amp * 0.06) - this.flinch * 0.6;
       this.paper.rotation.z = this.paperTilt + Math.sin(this.paperT * 5.3) * 0.02;
     }
+    this.tag.sprite.position.y = 2.12 - c * 0.55 + bob;
     const sh = 0.95 - c * 0.0 - a * 0.25;
     this.shadow.scale.set(sh, 1, sh);
   }
@@ -625,6 +637,7 @@ export class CharacterModel {
     if (this.dead) return;
     this.setSpecial(null);
     this.dead = true;
+    this.tag.sprite.visible = false;
     this.deadT = 0;
     // direção em espaço local do root
     this.dDir.set(dir.x, 0, dir.z);
@@ -753,6 +766,8 @@ export class CharacterModel {
 
   respawn(): void {
     this.dead = false;
+    this.tag.sprite.visible = this.tag.hasText;
+    this.tag.sprite.position.y = 2.12;
     this.setFlash(false);
     this.flashT = 0;
     this.root.scale.set(1, 1, 1);
@@ -784,6 +799,7 @@ export class CharacterModel {
     // Geometrias e materiais do corpo são compartilhados (cache). Só a folha da foto é por instância.
     this.paperTex?.dispose();
     this.paperMat?.dispose();
+    this.tag.dispose();
   }
 }
 

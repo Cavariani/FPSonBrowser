@@ -26,6 +26,8 @@ export interface FxHost {
   localBlind(): number;
   /** Vapor do café na tela do jogador local, 0..1. */
   localSteam(): number;
+  /** Fumaça do bong (chapado) no jogador local, 0..1. */
+  localChapado(): number;
   groundY(x: number, y: number, z: number): number;
 }
 
@@ -343,6 +345,10 @@ export class SpecialFX {
 
     bus.on('status:apply', (e) => {
       if (e.local && e.kind === 'blind') this.overlay.newSplat();
+      if (e.kind === 'chapado') {
+        const a = this.actorById(e.actorId);
+        if (a && !a.isLocal) for (let i = 0; i < 5; i++) this.puff(_a.set(a.pos.x, a.pos.y + 1.5, a.pos.z), 0xcfe8b8, 0.7, 1.2);
+      }
       if (e.kind === 'steam') {
         const a = this.actorById(e.actorId);
         if (a && !a.isLocal) for (let i = 0; i < 4; i++) this.puff(_a.set(a.pos.x, a.pos.y + 1.4, a.pos.z), 0xffffff, 0.6, 0.9);
@@ -762,6 +768,25 @@ export class SpecialFX {
         }
         break;
       }
+      case 'bong': {
+        // nuvem de fumaça grossa, lenta, esverdeada, que se espalha e fica pairando
+        this.flameAcc += dt * 70;
+        const n = Math.floor(this.flameAcc);
+        this.flameAcc -= n;
+        for (let i = 0; i < n; i++) {
+          const sp = rr(6, 10);
+          _a.set(rnd(1), rnd(1), rnd(1)).multiplyScalar(0.3 * sp);
+          this.soft.spawn(b.origin.x, b.origin.y, b.origin.z, b.dir.x * sp + _a.x, b.dir.y * sp + _a.y + 0.4, b.dir.z * sp + _a.z, {
+            life: rr(0.9, 1.5), size0: rr(0.15, 0.25), size1: rr(1.4, 2.2), c0: 0xe4eedc, c1: 0xa8b8a0, alpha: 0.42, drag: 2.2, spin: 0.6,
+          });
+        }
+        if (b.hit && Math.random() < dt * 12) {
+          this.soft.spawn(b.end.x + rnd(0.4), b.end.y + rnd(0.3), b.end.z + rnd(0.4), rnd(0.3), rr(0.3, 0.8), rnd(0.3), {
+            life: rr(1, 1.6), size0: 0.4, size1: 1.6, c0: 0xd8f0c0, c1: 0x9ab890, alpha: 0.35, drag: 1.5,
+          });
+        }
+        break;
+      }
     }
     void key;
   }
@@ -802,6 +827,7 @@ export class SpecialFX {
     this.overlay.update(dt, {
       blind: this.host.localBlind(),
       steam: this.host.localSteam(),
+      chapado: this.host.localChapado(),
       burning: !!l && this.host.statusLeft(l.id, 'burn') > 0,
       stunned: !!l && this.host.statusLeft(l.id, 'stun') > 0,
       shocked: !!l && this.host.statusLeft(l.id, 'shock') > 0,
@@ -842,6 +868,7 @@ export class SpecialFX {
       const burn = this.host.statusLeft(a.id, 'burn');
       const shock = this.host.statusLeft(a.id, 'shock');
       const stun = this.host.statusLeft(a.id, 'stun');
+      const high = this.host.statusLeft(a.id, 'chapado');
 
       if (a.alive && !a.isLocal) {
         const h = a.height;
@@ -860,6 +887,20 @@ export class SpecialFX {
             model.root.position.z += rnd(0.06);
             model.root.position.y += Math.random() * 0.04;
           }
+        }
+        // chapado: fumacinha subindo da cabeça e o boneco balançando devagar
+        if (high > 0) {
+          if (Math.random() < dt * 6) {
+            this.soft.spawn(a.pos.x + rnd(0.15), a.pos.y + h + 0.1, a.pos.z + rnd(0.15), rnd(0.2), rr(0.5, 0.9), rnd(0.2), {
+              life: rr(1, 1.6), size0: 0.15, size1: 0.7, c0: 0xd8eec8, c1: 0xa0b098, alpha: 0.4, drag: 1, spin: 0.8,
+            });
+          }
+          if (model) {
+            const k = Math.min(1, high);
+            model.root.rotation.z = Math.sin(this.time * 2.2 + a.pos.x) * 0.09 * k;
+          }
+        } else if (model && model.root.rotation.z !== 0 && a.alive) {
+          model.root.rotation.z = 0;
         }
         // arma maluca na mão em 3ª pessoa: CharacterModel (pose.special)
       } else {

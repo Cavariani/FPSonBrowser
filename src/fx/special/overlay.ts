@@ -14,6 +14,7 @@ const CSS = `
 .sfx .burn{background:radial-gradient(ellipse at 50% 55%,rgba(255,120,0,0) 38%,rgba(255,96,0,.38) 72%,rgba(255,40,0,.78) 100%)}
 .sfx .shock{background:radial-gradient(circle at 50% 50%,rgba(210,240,255,.55),rgba(120,200,255,.25) 60%,rgba(255,255,255,.5))}
 .sfx .steam{background:radial-gradient(ellipse at 50% 50%,rgba(255,255,255,.55),rgba(236,240,244,.8) 70%,rgba(255,255,255,.9));backdrop-filter:blur(7px) brightness(1.15);-webkit-backdrop-filter:blur(7px) brightness(1.15)}
+.sfx .high{background:radial-gradient(ellipse at 50% 50%,rgba(160,255,120,0) 45%,rgba(110,200,60,.28) 75%,rgba(150,60,200,.45) 100%)}
 .sfx .stun{display:flex;justify-content:center;align-items:flex-start}
 .sfx .stun .ring{position:relative;width:min(46vw,380px);height:min(10vw,80px);margin-top:3vh}
 .sfx .stun .st{position:absolute;left:50%;top:50%;font:700 min(6vw,46px)/1 sans-serif;color:#ffe14a;text-shadow:0 2px 0 #7a5200,0 0 8px #ffb300;transform:translate(-50%,-50%)}
@@ -53,11 +54,13 @@ export class Overlay {
   private shock: HTMLDivElement;
   private stun: HTMLDivElement;
   private steam: HTMLDivElement;
+  private high: HTMLDivElement;
   private stars: HTMLElement[] = [];
   private t = 0;
   private burnA = 0;
   private stunA = 0;
   private steamA = 0;
+  private highA = 0;
   enabled = true;
 
   constructor() {
@@ -77,6 +80,7 @@ export class Overlay {
     this.splat = mk('splat');
     this.stun = mk('stun');
     this.steam = mk('steam');
+    this.high = mk('high');
     const ring = document.createElement('div');
     ring.className = 'ring';
     for (let i = 0; i < 5; i++) {
@@ -97,12 +101,26 @@ export class Overlay {
     this.splat.innerHTML = splatSVG();
   }
 
-  update(dt: number, s: { blind: number; steam: number; burning: boolean; stunned: boolean; shocked: boolean }): void {
+  update(dt: number, s: { blind: number; steam: number; chapado: number; burning: boolean; stunned: boolean; shocked: boolean }): void {
     this.t += dt;
     const on = this.enabled;
     this.splat.style.opacity = on ? String(Math.min(1, s.blind)) : '0';
     this.steamA += ((on ? s.steam : 0) - this.steamA) * Math.min(1, dt * 12);
     this.steam.style.opacity = this.steamA < 0.01 ? '0' : Math.min(0.92, this.steamA).toFixed(2);
+    // chapado: cores girando, saturação lá em cima e um borrãozinho que vai e volta (some junto com a opacidade)
+    this.highA += ((on ? s.chapado : 0) - this.highA) * Math.min(1, dt * 3);
+    if (this.highA < 0.01) {
+      if (this.high.style.opacity !== '0') {
+        this.high.style.opacity = '0';
+        this.high.style.backdropFilter = '';
+        this.high.style.setProperty('-webkit-backdrop-filter', '');
+      }
+    } else {
+      const f = `hue-rotate(${(Math.sin(this.t * 0.9) * 75).toFixed(0)}deg) saturate(2.4) blur(${(0.4 + 0.6 * Math.sin(this.t * 1.7) ** 2).toFixed(2)}px)`;
+      this.high.style.opacity = Math.min(1, this.highA).toFixed(2);
+      this.high.style.backdropFilter = f;
+      this.high.style.setProperty('-webkit-backdrop-filter', f);
+    }
     this.burnA += ((s.burning ? 1 : 0) - this.burnA) * Math.min(1, dt * 6);
     this.burn.style.opacity = on ? String((this.burnA * (0.75 + Math.random() * 0.25)).toFixed(2)) : '0';
     this.stunA += ((s.stunned ? 1 : 0) - this.stunA) * Math.min(1, dt * 10);

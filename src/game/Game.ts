@@ -171,6 +171,7 @@ export class Game {
     if (!isBot) a.face = face; // definido antes do hook onActorAdd (o host repassa a face no 'join')
     if (!isLocal) {
       a.model = new CharacterModel(color, hashSeed(id));
+      a.model.setName(name);
       a.model.root.visible = false;
       this.scene.add(a.model.root);
       if (a.face) this.loadActorFace(a);
@@ -527,6 +528,16 @@ export class Game {
     // Atordoado (tijolo na cabeça): mira travada
     if (playing && local.alive && !this.sp.status.has(local.id, 'stun')) this.handleLook();
     else { this.lastLookDX = 0; this.lastLookDY = 0; }
+    // Chapado (bong): a mira vai sozinha pros lados, devagar, em ondas que não se repetem
+    if (playing && local.alive) {
+      const high = this.sp.status.chapado(local.id);
+      if (high > 0) {
+        const t = performance.now() / 1000;
+        this.player.yaw += (Math.sin(t * 0.83) * 0.55 + Math.sin(t * 2.1 + 1.3) * 0.25) * high * dt;
+        this.player.pitch += (Math.sin(t * 0.61 + 2) * 0.3 + Math.sin(t * 1.7) * 0.12) * high * dt;
+        this.player.pitch = Math.max(-89 * DEG, Math.min(89 * DEG, this.player.pitch));
+      }
+    }
 
     // Cheats de killstreak: V ativa o melhor guardado; timers; aimbot mexe na mira; noclip liga/desliga no Player
     const cheating = !!playing && local.alive;
@@ -718,7 +729,7 @@ export class Game {
         sprint: this.sprintOn,
         flyUp: k('Space') - (k('ControlLeft') || k('KeyC')),
         flyFast: !!k('ShiftLeft') || !!k('ShiftRight'),
-        speedMult: (local.special ? 1 : this.weapons.def.moveMult * (1 - 0.3 * this.weapons.ads)) * (this.sp.status.has(local.id, 'stun') ? 0.7 : 1) * (local.buffs.speed > 0 ? SPEED_MULT : 1),
+        speedMult: (local.special ? 1 : this.weapons.def.moveMult * (1 - 0.3 * this.weapons.ads)) * (this.sp.status.has(local.id, 'stun') ? 0.7 : 1) * (this.sp.status.has(local.id, 'chapado') ? 0.82 : 1) * (local.buffs.speed > 0 ? SPEED_MULT : 1),
       });
       this.jumpQueued = false;
       local.pos.copy(this.player.pos);
@@ -740,9 +751,10 @@ export class Game {
         knocked: (a: Actor) => !!this.sp.status.pushOf(a.id),
         stunned: (a: Actor) => this.sp.status.has(a.id, 'stun'),
         blinded: (a: Actor) => this.sp.status.has(a.id, 'blind'),
+        high: (a: Actor) => this.sp.status.has(a.id, 'chapado'),
         // Loja: bots vão atrás de powerups que servem (vida baixa, sem colete...). Treino: armas malucas do chão.
         pickupNear: (a: Actor) => (this.mode === 'gungame' ? this.sp.powers.nearest(a.pos.x, a.pos.z, 30, (k) => powerUseful(a, k)) : a.special ? null : this.sp.pickups.nearest(a.pos.x, a.pos.z, 45)),
-        speedMult: (a: Actor) => (a.buffs.speed > 0 ? SPEED_MULT : 1),
+        speedMult: (a: Actor) => (a.buffs.speed > 0 ? SPEED_MULT : 1) * (this.sp.status.has(a.id, 'chapado') ? 0.82 : 1),
         fire: (a: Actor, d: WeaponDef, o: THREE.Vector3, dirs: THREE.Vector3[]) => this.fire(a, d, o, dirs),
         melee: (a: Actor, d: WeaponDef, o: THREE.Vector3, dir: THREE.Vector3, heavy: boolean) => {
           const hit = this.melee(a, d, o, dir, heavy);

@@ -20,6 +20,8 @@ export interface BotHost {
   knocked(a: Actor): boolean;
   stunned(a: Actor): boolean;
   blinded(a: Actor): boolean;
+  /** Chapado (bong): mira bem pior. */
+  high(a: Actor): boolean;
   /** Pickup de arma maluca mais próximo (ou null). */
   pickupNear(a: Actor): { id: number; pos: [number, number, number] } | null;
   /** Multiplicador de velocidade (energético). */
@@ -141,6 +143,7 @@ export class BotBrain {
     const def = WEAPONS[a.weapon];
     const stunned = host.stunned(a);
     const blinded = host.blinded(a);
+    const high = host.high(a);
     let spHeld = false, spPressed = false;
     this.spCool -= dt;
 
@@ -175,7 +178,7 @@ export class BotBrain {
       const wantPitch = Math.asin(_d.y / Math.max(dist, 0.001)) + (a.special ? lobPitch(a.special, dist) : 0);
 
       // Erro de mira diminui conforme rastreia o alvo
-      const errScale = (1 - diff * 0.75) * Math.max(0.15, 1 - this.seeTime * 0.8) * (blinded ? 4 : 1);
+      const errScale = (1 - diff * 0.75) * Math.max(0.15, 1 - this.seeTime * 0.8) * (blinded ? 4 : 1) * (high ? 2.5 : 1);
       this.aimErrYaw += (Math.random() - 0.5) * dt * 3;
       this.aimErrPitch += (Math.random() - 0.5) * dt * 2;
       this.aimErrYaw *= 0.96;
@@ -332,6 +335,11 @@ export class BotBrain {
       case 'bola': throwIf(dist > 2.5 && dist < 32 && onTarget && seen, 0.7, 1.4); break;
       case 'cafe':
         held = dist < 10.8 && onTarget;
+        approach = dist > 6 ? 1 : 0;
+        break;
+      // bong: sopra de perto; se exagerar, chapa e tosse como qualquer um
+      case 'bong':
+        held = dist < 9.5 && onTarget;
         approach = dist > 6 ? 1 : 0;
         break;
       case 'pipa':

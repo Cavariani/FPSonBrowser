@@ -5,6 +5,7 @@ import type { WeaponId } from '../game/weaponDefs';
 
 /** Silhuetas pixeladas simples (viewBox 24x10). */
 const ICONS: Record<WeaponId | SpecialId, string> = {
+  bong: '<rect x="10" y="0" width="4" height="6"/><rect x="9" y="0" width="6" height="1"/><rect x="8" y="5" width="8" height="1"/><rect x="7" y="6" width="10" height="4"/><rect x="16" y="5" width="2" height="1"/><rect x="17" y="4" width="2" height="1"/><rect x="17" y="2" width="4" height="2"/><rect x="10" y="2" width="4" height="1" fill="#000" fill-opacity=".35"/>',
   smg: '<rect x="0" y="3" width="4" height="3"/><rect x="4" y="2" width="14" height="4"/><rect x="18" y="3" width="6" height="2"/><rect x="8" y="6" width="3" height="4"/><rect x="14" y="6" width="2" height="3"/>',
   rifle: '<rect x="0" y="3" width="6" height="4"/><rect x="6" y="3" width="12" height="3"/><rect x="18" y="4" width="6" height="1"/><rect x="9" y="6" width="3" height="4"/><rect x="8" y="1" width="6" height="2"/>',
   shotgun: '<rect x="0" y="3" width="8" height="4"/><rect x="8" y="3" width="16" height="2"/><rect x="11" y="5" width="6" height="2"/><rect x="8" y="5" width="2" height="3"/>',

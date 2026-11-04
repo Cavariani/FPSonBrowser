@@ -217,6 +217,38 @@ add('steam', 2, (rng, sr) => {
   return finalize(s, 0.3, 0, 0.1);
 });
 
+// ------------------------------------------------------------------ bong
+
+// água borbulhando: bolhas curtinhas com o tom subindo, em cima de um chiado de ar baixo
+loopRecipe('bubbleLoop', 1.0, 0.45, (raw, sr, L, rng) => {
+  const lp = new Biquad();
+  lp.set('lp', 900, 0.7, sr);
+  for (let i = 0; i < raw.length; i++) raw[i] = lp.process(rng() * 2 - 1) * 0.08;
+  for (let k = 0; k < 46; k++) {
+    const p = (rng() * L) | 0, f0 = 250 + rng() * 450, g = 0.25 + rng() * 0.45;
+    const len = Math.round((0.018 + rng() * 0.03) * sr);
+    let ph = 0;
+    for (let j = 0; j < len && p + j < raw.length; j++) {
+      const t = j / sr;
+      ph += (TAU * f0 * (1 + t * 40)) / sr;
+      raw[p + j] += Math.sin(ph) * Math.exp(-t / 0.008) * g;
+    }
+  }
+});
+
+// tosse: três "cof" de ar raspando com um grave de peito
+add('cough', 2, (rng, sr, v) => {
+  const s = mk(sr)(0.95);
+  const n = 3 - v;
+  for (let k = 0; k < n; k++) {
+    const t = k * jit(rng, 0.24, 0.15);
+    addNoise(s, rng, { t, dur: 0.2, attack: 0.004, decay: 0.06, gain: 1, filters: [{ type: 'bp', f: jit(rng, 850, 0.15), q: 1.1 }] });
+    addNoise(s, rng, { t, dur: 0.16, color: 'pink', attack: 0.003, decay: 0.05, gain: 0.6, filters: [{ type: 'lp', f: 2600 }] });
+    addTone(s, { t, dur: 0.14, f0: jit(rng, 150, 0.1), f1: 110, pitchTau: 0.05, decay: 0.05, gain: 0.5, attack: 0.004 });
+  }
+  return finalize(s, 0.7, 0.6, 0.05);
+});
+
 // ------------------------------------------------------------------ ventilador: hélice picotando
 
 loopRecipe('chopLoop', 0.5, 0.45, (raw, sr, L, rng) => {
