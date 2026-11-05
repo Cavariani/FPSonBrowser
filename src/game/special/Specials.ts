@@ -1039,7 +1039,7 @@ export class SpecialSystem implements ProjHost {
     }
 
     if (st.id === 'bong') {
-      // nuvem de fumaça: dano baixo, mas deixa chapado
+      // nuvem de fumaça: dano médio e deixa chapado
       const wh = world.raycast(eye, dir, P.range);
       end = wh ? wh.point.clone() : eye.clone().addScaledVector(dir, P.range);
       this.inCone(a, eye, dir, P.range, P.cone, (v, _d2, chest) => {

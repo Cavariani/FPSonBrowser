@@ -137,10 +137,10 @@ export const SPECIALS: Record<SpecialId, SpecialDef> = {
   bong: {
     id: 'bong', name: 'Bong', short: 'BONG', hint: 'Segure para soprar fumaça. Puxou demais, chapa você',
     style: 'jet', ammo: 7, unit: 'sec', color: 0x7fb800,
-    // Nuvem de fumaça em cone: pouco dano, mas deixa a vítima chapada (`high` s: tela doida, mira à deriva, mais lenta).
+    // Nuvem de fumaça em cone: dano médio (abaixo do café) e deixa a vítima chapada (`high` s: tela doida, mira à deriva, mais lenta).
     // Quem sopra acumula "tragada" enquanto segura; passou de `overdose` s, chapa ele mesmo (`selfHigh` s) e tosse
     // (`cough` s sem soprar). Soltando o botão, a tragada baixa `cool` por segundo.
-    p: { range: 10, cone: 0.38, dps: 45, tick: 0.1, high: 4.5, overdose: 2.6, cool: 0.8, selfHigh: 5.5, cough: 1.1 },
+    p: { range: 10.5, cone: 0.38, dps: 85, tick: 0.1, high: 4.5, overdose: 2.6, cool: 0.8, selfHigh: 5.5, cough: 1.1 },
   },
 };
 

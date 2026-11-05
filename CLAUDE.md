@@ -39,7 +39,7 @@ Não há testes automatizados.
 
 - **Escada:** 15 malucas, da mais fraca à mais forte (`LADDER` em `src/game/shop.ts`, ordem estimada pelos números, sem playtest). Todo mundo nasce com a do seu nível; 1 kill sobe um nível; quem mata no último nível (Tijolo) vence.
 - **Loja (tecla B, sem rounds):** só armas comuns (faca, pistola, smg, escopeta, fuzil, sniper) e extras (colete, vida cheia, munição das malucas). Malucas NÃO se vendem. Comprar uma comum substitui a maluca na mão até morrer; ao respawnar volta a maluca do nível. Compra validada no host (`Match.buy`, `canBuy`).
-- **Bong (nível 4):** jato de fumaça com pouco dano que deixa a vítima chapada (status `chapado`: tela com cores girando, mira à deriva, 18% mais lento; bots erram mais). Quem segura o sopro por mais de `overdose` s chapa a si mesmo e tosse sem soprar por um tempo; a barra de carga do HUD mostra a tragada.
+- **Bong (nível 4):** jato de fumaça com dano médio que deixa a vítima chapada (status `chapado`: tela com cores girando, mira à deriva, 18% mais lento; bots erram mais). Quem segura o sopro por mais de `overdose` s chapa a si mesmo e tosse sem soprar por um tempo; a barra de carga do HUD mostra a tragada.
 - **Dinheiro:** $500 inicial, $300 por kill (`shop.ts`). Colete absorve 50% do dano até 100 pontos.
 - **Munição das malucas regenera sozinha**, devagar (`regenAmmo` em `Specials.ts`; `REGEN_FULL`/`regen` em `defs.ts`).
 - **Powerups fixos no mapa (estilo Doom/Quake), só na loja:** 12 pontos espalhados, voltam depois de pegos (`src/game/special/Powerups.ts`): marmita (+50 vida), capacete (+50 colete), energético (velocidade x1,4, 10 s), pilha (munição infinita, 10 s), PIX (+$300), cachaça (dano x2, 12 s). Host decide; buffs são `Actor.buffs` (segundos).
